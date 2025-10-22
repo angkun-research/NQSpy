@@ -118,10 +118,10 @@ def exact_ground_state(L, t1, t2,basis):
     return rvb_vec
 
 
-L = 11
+L = 7
 basis = build_MB_basis(L)
 t1 = 1.0
-t2 = 1.0
+t2 = 0.5
 H = build_Hamiltonian(L, t1, t2, basis)
 # check H is Hermitian
 assert np.allclose(H, H.conj().T), "Hamiltonian is not Hermitian"
@@ -129,6 +129,7 @@ rvb_gs = exact_ground_state(L, t1, t2, basis)
 
 eigvals, eigvecs = la.eigh(H)
 ground_state = eigvecs[:, 0]  # Ground state vector
+print(f"Exact ground state energy: {eigvals[0]:.6f}")
 
 # Step 3: Compute overlap
 overlap = np.abs(np.dot(rvb_gs, ground_state))
@@ -137,4 +138,8 @@ print(f"Overlap between RVB superposition and ground state: {overlap:.6f}")
 # compute all overlaps
 all_overlaps = np.abs(np.dot(rvb_gs, eigvecs))
 for idx, val in enumerate(all_overlaps):
-    print(f"Overlap with eigenstate {idx}: {val:.6f} (E={eigvals[idx]:.3f})")
+    if val > 0.5:
+        print(f"Overlap with eigenstate {idx}: {val:.6f} (E={eigvals[idx]:.3f})")
+
+# find the position of the largest overlap
+max_idx = np.argmax(all_overlaps)
