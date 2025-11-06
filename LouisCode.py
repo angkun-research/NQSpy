@@ -21,7 +21,7 @@ graph = nk.graph.Chain(L)
 
 t1 = 1
 t2 = 0.5
-#U = 1e10
+U = 1e5 #1e10
 H = 0.0
 
 for i, j in zip(list(range(L-1)), list(range(1, L))):
@@ -32,8 +32,8 @@ for i, j in zip(list(range(0, L-2, 2)), list(range(2, L, 2))):
     H -= t2 * (cdag(hi, i, -1) @ c(hi, j, -1) + cdag(hi, j, -1) @ c(hi, i, -1))
     H -= t2 * (cdag(hi, i, 1) @ c(hi, j, 1) + cdag(hi, j, 1) @ c(hi, i, 1))
 
-#for i in range(L):
-#    H += U * nc(hi, i, 1) @ nc(hi, i, -1)
+for i in range(L):
+    H += U * nc(hi, i, 1) @ nc(hi, i, -1)
     
 def _logdet_cmplx(A):
     sign, logabsdet = jnp.linalg.slogdet(A)
@@ -78,7 +78,7 @@ op = nk.optimizer.Sgd(learning_rate=0.001)
 gs = nk.VMC(H, op, variational_state=vstate)
 
 slater_log = nk.logging.RuntimeLog()
-gs.run(n_iter=1000, out=slater_log)
+gs.run(n_iter=10000, out=slater_log)
 
 print("nn energy was:", gs.energy)
 print("ed energy was:", eigsh(H.to_sparse(), k=1, which="SA")[0][0])

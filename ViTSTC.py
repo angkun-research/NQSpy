@@ -41,7 +41,7 @@ class NoDoubleOccupancyConstraint(nk.hilbert.constraint.DiscreteHilbertConstrain
 L = 7
 t1 = 1
 t2 = 0.5
-#U = 1e10  # Large U for strong interaction
+U = 0# 10**5 #1e10  # Large U for strong interaction
 
 # --- Build graph and Hilbert space ---
 graph = nk.graph.Chain(L, pbc=False)
@@ -66,8 +66,8 @@ for i, j in zip(range(L-1), range(1, L)):
 for i, j in zip(range(0, L-2, 2), range(2, L, 2)):
     H -= t2 * (cdag(hi, i, sz=up) @ c(hi, j, sz=up) + cdag(hi, j, sz=up) @ c(hi, i, sz=up))
     H -= t2 * (cdag(hi, i, sz=down) @ c(hi, j, sz=down) + cdag(hi, j, sz=down) @ c(hi, i, sz=down))
-#for i in range(L):
-#    H += U * nc(hi, i, 1) @ nc(hi, i, -1)
+for i in range(L):
+    H += U * nc(hi, i, 1) @ nc(hi, i, -1)
 
 hamiltonian = H.to_jax_operator()
 
@@ -92,7 +92,7 @@ vstate = nk.vqs.MCState(
     chunk_size=1024,
 )
 # --- Optimizer ---
-optimizer = nk.optimizer.Adam(learning_rate=0.05)
+optimizer = nk.optimizer.Adam(learning_rate=0.001)
 
 # --- VMC Driver ---
 vmc = nk.VMC(
@@ -124,3 +124,6 @@ gs_ed = eigvecs[:, 0]  # ground state
 # 4. Fidelity
 fidelity = np.abs(np.vdot(gs_ed, psi_vmc))**2
 print("Fidelity between VMC and ED ground state:", fidelity)
+
+print("nn energy was:", vmc.energy)
+print("ed energy was:", eigvals[0])

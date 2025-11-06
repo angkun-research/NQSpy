@@ -1,5 +1,30 @@
 import torch
 import torch.nn as nn
+import math
+import numpy as np
+
+class GeometricPool1d(nn.Module):
+    """Wrapper to signed geometric-mean (product) pooling.
+
+    Modes:
+      - 'geom': signed geometric mean (exp(mean(log(|x|)))) * sign(prod(x))
+                numerically stable via clamp(eps). Zero entries produce zero output.
+    Input expected shape: (B, C, L) -> output shape: (B, C)
+    """
+    def __init__(self, eps=1e-12):
+        super().__init__()
+        self.eps = float(eps)
+
+    def forward(self, x):
+        # x: (B, C, L)
+        # geom: signed geometric mean across last dim
+        # compute sign of product
+        sign = torch.prod(torch.sign(x), dim=-1)   # (B, C)
+        # compute mean log of absolute values (stable)
+        log_abs = torch.log(torch.clamp(torch.abs(x), min=self.eps))
+        mean_log = torch.mean(log_abs, dim=-1)    # (B, C)
+        geom = torch.exp(mean_log)                # (B, C)
+        return sign * geom
 
 # Neural network definition
 # fully connected
@@ -66,7 +91,110 @@ class ConvNet(nn.Module):
         #return torch.tanh(x).squeeze(-1)  # output in [-1, 1] # tanh behaves worse
         return torch.sigmoid(x).squeeze(-1)
 
-    
+class ConvSkipHole(nn.Module):
+    def __init__(self, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, 
+                 activation='sigmoid',holewave=False,
+                 n_freqs=8, amp_hidden=32):
+        super(ConvSkipHole, self).__init__()
+        self.pad = (kernel_size-1)//2
+        self.activation = activation
+        self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        #self.pool = nn.AdaptiveAvgPool1d(1)  # or AdaptiveSumPool1d if available
+        self.pool = GeometricPool1d()
+        self.finallayer = nn.Linear(hidden_dim, 1)
+
+        self.holewave=holewave
+        if holewave:
+            # plane-wave amplitude module (learnable frequencies + small MLP)
+            init_freqs = torch.arange(1, n_freqs + 1, dtype=torch.float32)
+            self.freqs = nn.Parameter(init_freqs)              # (n_freqs,)
+            # simple linear readout from Fourier features (no hidden layer)
+            #self.amp_mlp = nn.Linear(2 * n_freqs, 1, bias=True)
+            # small MLP: maps [sin(2pi f s), cos(2pi f s)] -> scalar amplitude
+            self.amp_mlp = nn.Sequential(
+                nn.Linear(2 * n_freqs, amp_hidden),
+                nn.ReLU(),
+                nn.Linear(amp_hidden, 1)
+            )
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        # build mask: True for positions that are NOT the hole
+        idx = torch.arange(L, device=device)
+        mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # select non-hole positions and reshape -> (B, L-1, C)
+        x_nohole = x[mask].view(batch_size, L - 1, C)
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x_nohole.permute(0, 2, 1)
+        if self.activation == 'sigmoid':
+            x = torch.relu(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        elif self.activation == 'tanh':
+            x = torch.tanh(self.layer1(x))
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+        #return torch.tanh(x).squeeze(-1)  # output in [-1, 1] # tanh behaves worse
+        #return torch.sigmoid(x).squeeze(-1)
+        #return x.squeeze(-1)
+        if self.activation == 'sigmoid':
+            x = torch.sigmoid(x)
+        if self.activation == 'tanh':
+            x = torch.tanh(x)
+            #x = x
+        
+        if self.holewave:
+            # --- compute learned plane-wave amplitude from hole position ---
+            # normalized position in [0,1)
+            s = hole_idx.float() / float(L)                     # (B,)
+            freqs = self.freqs.unsqueeze(0).to(device=device)   # (1, n_freqs)
+            phi = 2.0 * math.pi * (freqs * s.unsqueeze(1))      # (B, n_freqs)
+            feats = torch.cat([torch.sin(phi), torch.cos(phi)], dim=1)  # (B, 2*n_freqs)
+            amp = self.amp_mlp(feats).squeeze(-1)               # (B,) raw amplitude (can be positive/negative)
+            x = x * amp
+
+        return x.squeeze(-1)
+
+class ConvHoleTanh(nn.Module):
+    """
+    Convolutional net that appends a tanh-domain-wall channel computed from the hole
+    position. The encoding is tanh((site_index - hole_pos) / xi) so xi controls the
+    width of the domain wall (in sites). Set xi small -> sharper sign change at hole.
+    """
+    def __init__(self, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, xi=1.0):
+        super(ConvHoleTanh, self).__init__()
+        self.xi = float(xi)
+        self.pad = (kernel_size-1)//2
+        self.layer1 = nn.Conv1d(in_channels+1, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        self.pool = nn.AdaptiveAvgPool1d(1)  # or AdaptiveSumPool1d if available
+        self.finallayer = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        idx = torch.arange(L, device=device).unsqueeze(0)   # (1, L)
+        rel = (idx - hole_idx.unsqueeze(1)).float()        # (B, L)
+        # tanh domain wall encoding: shape (B, L, 1)
+        # note: xi in units of sites; smaller xi -> sharper wall
+        tanh_enc = torch.tanh(rel / (self.xi + 1e-9)).unsqueeze(-1)
+        # concatenate encoding as extra channel -> (B, L, C+1)
+        x_enc = torch.cat([x, tanh_enc], dim=2)
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x_enc.permute(0, 2, 1)
+        x = torch.relu(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+        #return torch.tanh(x).squeeze(-1)  # output in [-1, 1] # tanh behaves worse
+        return torch.sigmoid(x).squeeze(-1)
+        #return x.squeeze(-1)
+
 class PhysicsLocalLayer(nn.Module):
     def __init__(self, n_freqs=8, amp_hidden=32):
         super().__init__()
@@ -74,11 +202,12 @@ class PhysicsLocalLayer(nn.Module):
         init_freqs = torch.arange(1, n_freqs + 1, dtype=torch.float32)
         self.freqs = nn.Parameter(init_freqs)              # shape (n_freqs,)
         # small MLP: maps [sin(2pi f s), cos(2pi f s)] -> scalar amplitude
-        self.amp_mlp = nn.Sequential(
-            nn.Linear(2 * n_freqs, amp_hidden),
-            nn.ReLU(),
-            nn.Linear(amp_hidden, 1)
-        )
+        # self.amp_mlp = nn.Sequential(
+        #     nn.Linear(2 * n_freqs, amp_hidden),
+        #     nn.ReLU(),
+        #     nn.Linear(amp_hidden, 1)
+        # )
+        self.amp_mlp = nn.Linear(2 * n_freqs, 1, bias=True)
         
     def forward(self, x):
         # x: (batch, L, 4) one-hot
@@ -231,3 +360,196 @@ class MultiKernelConvNet(nn.Module):
         x = self.pool(x).squeeze(-1)
         x = self.final(x)
         return torch.sigmoid(x).squeeze(-1)
+    
+
+
+class VisionTransformer1D(nn.Module):
+    """
+    Vision-Transformer style model adapted to 1D sequences.
+    - Splits the length into non-overlapping patches (patch_size).
+    - Uses a cls token + positional embeddings and a standard TransformerEncoder.
+    - Returns a scalar per sample (default sigmoid activation to match other nets).
+    This version is independent of the compile-time input length L and computes
+    positional encodings at runtime.
+    """
+    def __init__(self, in_channels=4, patch_size=2, embed_dim=64,
+                 num_layers=4, num_heads=4, mlp_dim=128, dropout=0.1,
+                 activation='sigmoid'):
+        super().__init__()
+        self.patch_size = patch_size
+        self.embed_dim = embed_dim
+        self.activation = activation
+
+        # patch embedding using Conv1d (stride = kernel = patch_size)
+        self.patch_embed = nn.Conv1d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
+        patch_in_dim = in_channels * patch_size
+        self.patch_mlp = nn.Sequential(
+            nn.Linear(patch_in_dim, embed_dim),
+            #nn.ReLU(),
+            #nn.Linear(embed_dim, embed_dim)
+        )
+        # CLS token + positional embedding
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        L = 1000  # dummy length to compute number of patches
+        self.pos_embed = nn.Parameter(torch.zeros(1, 1 + L, embed_dim))
+
+        # Transformer encoder
+        encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads,
+                                                   dim_feedforward=mlp_dim, dropout=dropout,
+                                                   batch_first=True)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.norm = nn.LayerNorm(embed_dim)
+
+        # head -> scalar
+        self.head = nn.Linear(embed_dim, 1)
+
+        # init
+        nn.init.normal_(self.pos_embed, std=0.02)
+        nn.init.normal_(self.cls_token, std=0.02)
+
+    def sinusoidal_positional_encoding(self, seq_len, device, dtype):
+        """Return (1, seq_len, embed_dim) sinusoidal positional encodings.
+        We zero the CLS token's positional embedding (position 0)."""
+        pe = torch.zeros(seq_len, self.embed_dim, device=device, dtype=dtype)
+        position = torch.arange(0, seq_len, device=device, dtype=dtype).unsqueeze(1)  # (seq_len,1)
+        div_term = torch.exp(torch.arange(0, self.embed_dim, 2, device=device, dtype=dtype) *
+                             -(math.log(10000.0) / self.embed_dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # (1, seq_len, embed_dim)
+        # zero CLS position (index 0) so cls token doesn't get positional bias by default
+        if seq_len > 0:
+            pe[:, 0, :] = 0.0
+        return pe
+    
+    def forward(self, x):
+        # x: (B, L, C)
+        batch_size, L, C = x.shape
+        device = x.device
+        dtype = x.dtype
+
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        # build mask: True for positions that are NOT the hole
+        idx = torch.arange(L, device=device)
+        mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # select non-hole positions and reshape -> (B, L-1, C)
+        x_nohole = x[mask].view(batch_size, L - 1, C)
+
+        # to (B, C, L_patched)
+        x_c = x_nohole.permute(0, 2, 1)
+        patches = self.patch_embed(x_c)                # (B, embed_dim, n_patches)
+        n_patches = patches.shape[2]
+        patches = patches.permute(0, 2, 1)             # (B, n_patches, embed_dim)
+        # # Build non-overlapping patches by flattening patch_size sites into one vector
+        # n_patches = (L - 1) // self.patch_size
+        # if n_patches > 0:
+        #     # truncate remainder sites that don't form a full patch
+        #     x_trim = x_nohole[:, : n_patches * self.patch_size, :]                    # (B, n_patches*patch_size, C)
+        #     patches = x_trim.view(batch_size, n_patches, self.patch_size * C)         # (B, n_patches, patch_size*C)
+        #     # MLP operates on last dim -> (B, n_patches, embed_dim)
+        #     patches = self.patch_mlp(patches)
+
+        # prepend cls token
+        cls = self.cls_token.expand(batch_size, -1, -1)         # (B,1,embed_dim)
+        seq = torch.cat([cls, patches], dim=1)         # (B, 1+n_patches, embed_dim)
+
+        # # add runtime positional embeddings
+        # pos = self.sinusoidal_positional_encoding(seq.size(1), device, dtype)  # (1, seq_len, embed_dim)
+        # seq = seq + pos
+        # add positional embeddings (supports smaller L via slicing)
+        #seq = seq + self.pos_embed[:, : seq.size(1), :]
+
+        # transformer -> take cls token
+        seq = self.transformer(seq)
+        seq = self.norm(seq)
+        cls_out = seq[:, 0, :]                          # (B, embed_dim)
+        out = self.head(cls_out).squeeze(-1)           # (B,)
+
+        if self.activation == 'sigmoid':
+            return torch.sigmoid(out)
+        if self.activation == 'tanh':
+            return torch.tanh(out)
+        return out
+    
+
+class LdepConvSkipHole(nn.Module):
+    def __init__(self, L, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, 
+                 holewave=False,
+                 n_freqs=8, amp_hidden=32):
+        super(LdepConvSkipHole, self).__init__()
+        self.pad = (kernel_size-1)//2
+        self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        self.pool = GeometricPool1d()
+        #self.fc1 = nn.Linear(hidden_dim*(L//2)+L, hidden_dim)
+        self.fc1 = nn.Linear(hidden_dim+L, hidden_dim)
+        self.finallayer = nn.Linear(hidden_dim, 1)
+
+        self.holewave=holewave
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        # build mask: True for positions that are NOT the hole
+        idx = torch.arange(L, device=device)
+        mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # select non-hole positions and reshape -> (B, L-1, C)
+        x_nohole = x[mask].view(batch_size, L - 1, C)
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x_nohole.permute(0, 2, 1)
+        x = torch.tanh(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        #x = x.view(batch_size, -1)  # flatten
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        # add hole position encoding to flattened vector
+        # make hole position one-hot vector
+        hole_vec = torch.zeros(batch_size, L, device=device)
+        if self.holewave:
+            hole_vec[torch.arange(batch_size), hole_idx] = 1.0
+        x = torch.cat([x, hole_vec], dim=1)
+        x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+        #x = torch.tanh(x)
+        
+        return x.squeeze(-1)
+    
+
+class LdepConv2d(nn.Module):
+    def __init__(self, L, in_channels=4, hidden_dim=1024, kernel_size=3):
+        super(LdepConv2d, self).__init__()
+        self.kernel_size = kernel_size
+        self.padding = (kernel_size-1) // 2
+        dim1 = int(np.sqrt(hidden_dim))
+        while hidden_dim % dim1 != 0:
+            dim1 -= 1
+        dim1p = hidden_dim // dim1
+        self.layers = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(L*in_channels, hidden_dim),
+            nn.Tanh(),
+            nn.Unflatten(1, (1, dim1, dim1p)), # Reshape to (batch_size, channels=1, height=dim1, width=dim1p)
+            nn.Conv2d(1, 4, kernel_size=kernel_size, padding=self.padding),  # Conv2d layer
+            nn.Tanh(),
+            nn.Flatten(),  # Flatten back to 1D
+            nn.Linear(dim1 * dim1p * 4, hidden_dim // 2),  # Adjust dimensions for Conv2d output
+            nn.Tanh(),
+            nn.Linear(hidden_dim // 2, 1)  # 1 for output
+        )
+        # self.layers = nn.Sequential(
+        #     nn.Conv1d(in_channels, 32, kernel_size=kernel_size, padding=self.padding),
+        #     nn.Tanh(),
+        #     nn.Flatten(),
+        #     nn.Linear(32*L, hidden_dim),  # Adjust dimensions for Conv2d output
+        #     nn.Tanh(),
+        #     nn.Linear(hidden_dim, 1)  # 1 for output
+        # )
+
+    def forward(self, x):
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x.permute(0, 2, 1)
+        x = self.layers(x)
+        return x.squeeze(-1)

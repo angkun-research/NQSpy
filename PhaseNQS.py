@@ -8,33 +8,30 @@ import NeuralNetworks as nnets
 from ExactGS import obtain_train_data
 from utils import total_squared_loss
 
-
 t1 = 1.0
 t2 = 0.5
 all_X = []
 all_y = []
 for L in [3,5,7,9]:
     X, y = obtain_train_data(L, t1=t1, t2=t2, TBcoeff=False, Reshape=True)
+    #X, y = obtain_train_data(L, t1=t1, t2=t2, TBcoeff=True, Reshape=True, Normalize=True)
     print(f"L={L}, number of configurations: {len(y)}")
-    all_X.append(X)
-    #all_y.append(y)
-    all_y.append(torch.abs(y)) # take absolute value of y to ignore the sign
+    # filter X, y to keep only |y| > 0
+    mask = torch.abs(y) > -1#1e-6
+    all_X.append(X[mask])
+    all_y.append(y[mask]) # take absolute value of y to ignore the
 
 print("max of y", torch.max(torch.cat(all_y)))
 print("min of y", torch.min(torch.cat(all_y)))
+#print(all_y)
 
 in_channels=4
-hidden_dim=32 #32
-kernel_size=3 #16
-#model = nnets.ConvNet(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size)
-#model = nnets.PhysicsConvNet()
-#model = nnets.ConvTransformer(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size)
-#model = nnets.TransformerConv()
-#model = nnets.MultiKernelConvNet(in_channels=in_channels, hidden_dim=hidden_dim)
+hidden_dim=256 #32
+kernel_size=3 #16s
 stride=2
-model = nnets.ConvSkipHole(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size, stride=stride)
-#model = nnets.ConvHoleTanh(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size, stride=stride)
-#model = nnets.VisionTransformer1D(patch_size=kernel_size, embed_dim=64,mlp_dim=64)
+activation='tanh'
+model = nnets.ConvSkipHole(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size, stride=stride, activation=activation)
+#model = nnets.VisionTransformer1D(patch_size=kernel_size, embed_dim=64,mlp_dim=128,activation=activation)
 
 criterion = total_squared_loss
 #criterion = nn.CrossEntropyLoss()
@@ -52,7 +49,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.01)#, weight_decay=1e-3) #lr=0.0
 
 
 # Training loop (example: 500 epochs)
-for epoch in range(5000):
+for epoch in range(2000):
     optimizer.zero_grad()
     #outputs = model(X)
     #loss = criterion(outputs, y)
@@ -86,7 +83,9 @@ with torch.no_grad():
 
 L = 11
 Xtest, ytest = obtain_train_data(L, t1=t1, t2=t2, TBcoeff=False, Reshape=True)
-ytest = torch.abs(ytest)
+mask = torch.abs(ytest) > 1e-6
+Xtest = Xtest[mask]
+ytest = ytest[mask] # take absolute value of y to ignore the
 with torch.no_grad():
     predicted_coeffs = model(Xtest)
     #print("True coeffs:", ytest.numpy())

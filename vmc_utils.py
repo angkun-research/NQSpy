@@ -149,3 +149,79 @@ def local_energy(state, psi, basis, basis_dict, H, device, L):
         ratio = psi_sp / (psi_s)
         E_loc = E_loc + coeff * ratio
     return E_loc
+
+
+
+
+# New: simple coefficient ansatz (real coefficients)
+class CoeffAnsatz(nn.Module):
+    def __init__(self, nbasis, complex=False, init_scale=0.1, device='cpu'):
+        super().__init__()
+        self.complex = complex
+        self.device = device
+        if self.complex:
+            self.real = nn.Parameter(init_scale * torch.randn(nbasis, device=device))
+            self.imag = nn.Parameter(init_scale * torch.randn(nbasis, device=device))
+        else:
+            self.coeffs = nn.Parameter(init_scale * torch.randn(nbasis, device=device))
+
+    # return scalar amplitude for an integer index (torch scalar)
+    def get_by_index(self, idx):
+        if self.complex:
+            return torch.complex(self.real[idx], self.imag[idx])
+        else:
+            return self.coeffs[idx]
+
+    # return full vector of amplitudes (torch tensor)
+    def get_all(self):
+        if self.complex:
+            return torch.complex(self.real, self.imag)
+        else:
+            return self.coeffs
+
+    # don't implement generic forward to avoid accidental one-hot calls
+    def forward(self, x):
+        raise RuntimeError("CoeffAnsatz.forward is not implemented. Use get_by_index or get_all().")
+
+# ...existing code...
+
+def local_energy_coeff(state, psi, basis, basis_dict, H, device, L):
+    """
+    Compute local energy for a given state.
+    psi: neural network or CoeffAnsatz
+    """
+    idx = basis_dict[state]
+    # Find all connected states (nonzero H[idx, :])
+    connected = np.nonzero(H[idx])[0]
+    E_loc = torch.zeros(1, device=device)
+    # psi_s using coefficient ansatz if available
+    if hasattr(psi, "get_by_index"):
+        psi_s = psi.get_by_index(idx)
+        # ensure tensor dtype/shape
+        if not torch.is_tensor(psi_s):
+            psi_s = torch.tensor(psi_s, device=device)
+    else:
+        s_onehot = torch.tensor(state_to_onehot(state, L), dtype=torch.float32, device=device).unsqueeze(0)
+        psi_s = psi(s_onehot)
+
+    for j in connected:
+        coeff = H[idx, j]
+        state_p = basis[j]
+        if hasattr(psi, "get_by_index"):
+            psi_sp = psi.get_by_index(j)
+            if not torch.is_tensor(psi_sp):
+                psi_sp = torch.tensor(psi_sp, device=device)
+        else:
+            s_p_onehot = torch.tensor(state_to_onehot(state_p, L), dtype=torch.float32, device=device).unsqueeze(0)
+            psi_sp = psi(s_p_onehot)
+        ratio = psi_sp / (psi_s + 1e-12)
+        E_loc = E_loc + coeff * ratio
+    return E_loc
+
+
+
+
+
+
+
+

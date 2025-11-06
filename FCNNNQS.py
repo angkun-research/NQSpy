@@ -5,7 +5,7 @@ import torch.optim as optim
 import NeuralNetworks as nnets
 from ExactGS import obtain_train_data
 from utils import total_squared_loss, fidelity_loss
-from vmc_utils import FCNet
+#from vmc_utils import FCNet
 
 L = 7
 t1 = 1.0
@@ -20,11 +20,11 @@ optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-10)
 
 # Training loop (example: 500 epochs)
 for epoch in range(1000):
-    optimizer.zero_grad()
+    optimizer.zero_grad() # zero the gradient buffers
     outputs = model(X)
     loss = criterion(outputs, y)
     loss.backward()
-    optimizer.step()
+    optimizer.step() # update parameters
     if epoch % 100 == 0:
         print(f"Epoch {epoch}, Loss: {loss.item()}")
 

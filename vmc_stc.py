@@ -10,6 +10,8 @@ import numpy.linalg as la
 
 from utils import total_squared_loss
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 L = 7
 basis = build_MB_basis(L)
 basis_dict = {state: idx for idx, state in enumerate(basis)}
@@ -20,7 +22,6 @@ eigvals, eigvecs = la.eigh(H)
 print(f"Exact ground state energy: {eigvals[0:3]}")
 exact_gs = eigvecs[:, 0]
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 psi = FCNet(L,hidden_dim=32).to(device)
 
 # Supervised pre training based on the exact ground state
@@ -34,8 +35,8 @@ y_tensor = torch.tensor(y, dtype=torch.float32, device=device)# shape [N, 1]
 
 criterion = total_squared_loss
 
+#psi = FCNet(L,hidden_dim=32).to(device)
 pretrain_optimizer = optim.Adam(psi.parameters(), lr=1e-2)
-
 for epoch in range(2000):
     pretrain_optimizer.zero_grad()
     outputs = psi(X_tensor)
