@@ -16,6 +16,38 @@ def build_MB_basis(L):
             basis.append((hole, up_sites))
     return basis
 
+def build_MB_basis_holes(L, nholes=1, Nup=None):
+    """
+    Build many-body basis with `nholes` holes and the rest singly-occupied sites
+    carrying spin up/down. Each basis state is represented as
+      (holes_tuple, up_sites_tuple)
+    where holes_tuple are the hole positions and up_sites_tuple are the positions
+    with spin-up electrons. Spin-down positions are the occupied sites not in up_sites.
+
+    Args:
+        L (int): number of lattice sites
+        nholes (int): number of holes (0 <= nholes < L)
+        Nup (int or None): number of up spins. If None, set to floor((L-nholes)/2).
+
+    Returns:
+        list of tuples: basis states as (holes_tuple, up_sites_tuple)
+    """
+    assert isinstance(L, int) and L > 0
+    assert isinstance(nholes, int) and 0 <= nholes < L
+
+    sites = list(range(L))
+    Nev = L - nholes  # number of electrons
+    if Nup is None:
+        Nup = Nev // 2  # "around half" up spins by default
+    assert 0 <= Nup <= Nev, "Nup must be between 0 and number of electrons"
+
+    basis = []
+    for holes in itertools.combinations(sites, nholes):
+        remaining_sites = [s for s in sites if s not in holes]
+        for up_sites in itertools.combinations(remaining_sites, Nup):
+            basis.append((tuple(sorted(holes)), tuple(sorted(up_sites))))
+    return basis
+
 def RVB_state(L):
     assert L % 2 == 1, "L must be odd"
     Npair = (L - 1) // 2
@@ -112,3 +144,92 @@ def obtain_train_data(L, t1=1.0, t2=1.0, TBcoeff=False, Reshape=False,Normalize=
     X = torch.tensor(onehot_configs, dtype=torch.float32)
     y = torch.tensor(coeffs, dtype=torch.float32)
     return X, y
+
+
+def build_Hamiltonian_holes(L, t1, t2, basis):
+    """
+    Build the many-body Hamiltonian for the infinite-U Hubbard model
+    for a basis with an arbitrary number of holes.
+
+    Each basis state is (holes_tuple, up_sites_tuple). Holes are empty sites.
+    Hopping: an electron from a neighbor site moves into a hole -> the hole
+    moves to the neighbor position. If the electron was up, update up_sites.
+    """
+    basis_dict = {state: idx for idx, state in enumerate(basis)}
+    H = np.zeros((len(basis), len(basis)), dtype=float)
+
+    for idx, state in enumerate(basis):
+        holes, up_sites = state
+
+        # normalize types: allow older code where hole was an int
+        if not isinstance(holes, tuple):
+            holes = (holes,)
+        if not isinstance(up_sites, tuple):
+            up_sites = (up_sites,)
+
+        # NN hopping: hole exchanges with a neighbor (delta = ±1)
+        for hole in holes:
+            for delta in (-1, 1):
+                neighbor = hole + delta
+                if neighbor < 0 or neighbor >= L:
+                    continue
+                # If neighbor is also a hole, there is no electron to hop
+                if neighbor in holes:
+                    continue
+
+                # compute new holes set: replace this hole by neighbor
+                new_holes = tuple(sorted([h for h in holes if h != hole] + [neighbor]))
+
+                # update up_sites if the electron at neighbor was up
+                if neighbor in up_sites:
+                    new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                else:
+                    new_up_sites = up_sites
+
+                new_state = (new_holes, new_up_sites)
+                try:
+                    H[idx, basis_dict[new_state]] -= t1
+                except KeyError:
+                    # new_state not in basis (shouldn't happen if basis built consistently)
+                    continue
+
+        # NNN hopping: only for holes on even python indices (same rule as before)
+        for hole in holes:
+            if hole % 2 == 0:
+                other_holes = [h for h in holes if h != hole]
+                for delta in (-2, 2):
+                    neighbor = hole + delta
+                    if neighbor < 0 or neighbor >= L:
+                        continue
+                    if neighbor in holes:
+                        continue
+
+                    new_holes = tuple(sorted([h for h in holes if h != hole] + [neighbor]))
+
+                    if neighbor in up_sites:
+                        new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                    else:
+                        new_up_sites = up_sites
+                    middle_site  = (hole + neighbor) // 2
+                    if middle_site in other_holes:
+                        sign_factor = 1
+                    else:
+                        sign_factor = -1
+                    new_state = (new_holes, new_up_sites)
+                    try:
+                        H[idx, basis_dict[new_state]] -= t2 * sign_factor # preserve original sign convention
+                    except KeyError:
+                        continue
+
+    return H
+
+def basis_to_spinconfig_holes(basis, L):
+    configs = []
+    for state in basis:
+        config = np.ones(L)
+        for hole in state[0]:
+            config[hole] = 0  # 0 for hole
+        for idx in state[1]:
+            config[idx] = 2  # 2 for up spin, 1 for down spin
+        configs.append(config)
+    return np.array(configs)

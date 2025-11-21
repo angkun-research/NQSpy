@@ -112,7 +112,20 @@ function basis_tuple_to_statevec(basis_tuple, L)
     return statevec
 end
 
-N = 101#50 + 1
+function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
+    #sites = siteinds(psi)
+    #cut = div(length(sites), 2) # cut in the middle
+    orthogonalize!(psi, cut)
+    U, S, V = svd(psi[cut]*psi[cut+1], inds(psi[cut]))
+    svals = diag(S)
+    p = svals .^ 2
+    #p ./= sum(p)
+    S_ent = -sum(p .* log.(p))
+    return S_ent
+    #return p
+end
+
+N = 11 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
 t1 = 1.0
@@ -127,20 +140,28 @@ state0 = [isodd(i) ? "Up" : "Dn" for i in 1:length(sites)]
 #state0[5] = "Emp" 
 #state0 = ["Up" for i in 1:length(sites)] # empty lattice
 state0[1] = "Emp"
+state0[2] = "Emp"
 #psi0 = randomMPS(sites,state0; linkdims=20)
 psi0 = productMPS(sites, state0) # better for large U
 
-nsweeps = 200 # number of sweeps is 5
-maxdim = [1024]#[16,16,16,16,16,32,32,32,32,32,
+nsweeps = 100 # number of sweeps is 5
+maxdim = [256]#[16,16,16,16,16,32,32,32,32,32,
         #64,64,64,64,64,128,128,128,128,128,
         #256,256,256,256,256,512,512,512,512,512,
         #1024,1024,1024,1024,1024,2048,2048] # gradually increase states kept
-cutoff = [1E-10] # desired truncation error
+cutoff = [1E-12] # desired truncation error
 energy, psi = dmrg(HMPO,psi0; nsweeps, cutoff, maxdim);
-
-energy, psi = dmrg(HMPO,psi; nsweeps, cutoff, maxdim);
-
-
+# EE = EntanglementEntropy(psi, cut=div(N,2))
+# EE = sort(EE; rev=true)
+# scatter(EE[1:80]; xlabel=L"k", ylabel=L"\lambda_k", yaxis=:log)
+#energy, psi = dmrg(HMPO,psi; nsweeps, cutoff, maxdim);
+# EEs = zeros(N-1)
+# for cut = 1:N-1
+#     EEs[cut] = EntanglementEntropy(psi, cut=cut)
+#     #println("Cut: $cut, S_ent: $(EEs[cut])")
+# end
+# scatter(1:N-1, EEs; xlabel="Cut", ylabel="S", legend=false)
+# savefig("~/Desktop/Fig3.pdf")
 # use analytical state as initial state
 rvb_basis, rvb_coeffs = RVB_state(N)
 gs = exact_ground_state(N, t1, t2, rvb_basis, rvb_coeffs)

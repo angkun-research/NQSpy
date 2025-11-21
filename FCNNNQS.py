@@ -12,14 +12,17 @@ t1 = 1.0
 t2 = 0.5
 X, y = obtain_train_data(L, t1=t1, t2=t2, TBcoeff=True, Reshape=False, Normalize=True)
 print(len(y))
-model = nnets.FCNet(L)
-#model = FCNet(L)
+hidden_dim = 1024 #32
+model = nnets.FCNet(L, hidden_dim=hidden_dim)
+
+total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print(f"Total trainable parameters: {total_params}")
 
 criterion = total_squared_loss
 optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-10)
 
 # Training loop (example: 500 epochs)
-for epoch in range(1000):
+for epoch in range(2000):
     optimizer.zero_grad() # zero the gradient buffers
     outputs = model(X)
     loss = criterion(outputs, y)

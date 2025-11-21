@@ -17,8 +17,8 @@ class FCNet(nn.Module):
     def forward(self, x):
         # x shape: (batch, L, 4)
         x = x.view(x.shape[0], -1)  # flatten to (batch, 4*L)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
+        x = torch.tanh(self.fc1(x)) #torch.relu(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
         x = self.fc3(x)
         return x.squeeze(-1)
 
@@ -110,8 +110,8 @@ def propose_move(state, L):
     """
     hole, up_sites = state
     up_sites = list(up_sites)
-    # Move hole to NN or NNN
     moves = []
+    # Move hole to NN or NNN
     for delta in [-2, -1, 1, 2]:
         neighbor = hole + delta
         if 0 <= neighbor < L and neighbor != hole:
@@ -128,6 +128,53 @@ def propose_move(state, L):
         return (new_hole, up_sites)
     else:
         return state  # no move possible
+    
+def GlobalSampler(state, L):
+    """
+    Propose a new state by moving the hole to a random site,
+    or keep hole position but swap a random two spins (to ensure ergodicity).
+    """
+    hole, up_sites = state
+    up_sites = list(up_sites)
+    # randomly choose two sites
+    while True:
+        site1, site2 = sorted(random.sample(range(L), 2))
+        if site1 == hole:
+            break
+        elif site2 == hole:
+            break
+        elif (site1 in up_sites) != (site2 in up_sites):
+            break
+
+    if site1 == hole:
+        new_hole = site2
+        up_sites_copy = up_sites.copy()
+        if site2 in up_sites:
+            # swap hole and up spin
+            idx = up_sites.index(site2)
+            up_sites_copy[idx] = hole
+        up_sites_copy = tuple(sorted(up_sites_copy))
+        return (new_hole, up_sites_copy)
+    elif site2 == hole:
+        new_hole = site1
+        up_sites_copy = up_sites.copy()
+        if site1 in up_sites:
+            idx = up_sites.index(site1)
+            up_sites_copy[idx] = hole
+        up_sites_copy = tuple(sorted(up_sites_copy))
+        return (new_hole, up_sites_copy)
+    else:
+        # swap spins at site1 and site2
+        up_sites_copy = up_sites.copy()
+        if site1 in up_sites:
+            idx = up_sites.index(site1)
+            up_sites_copy[idx] = site2
+        else:
+            idx = up_sites.index(site2)
+            up_sites_copy[idx] = site1
+        up_sites_copy = tuple(sorted(up_sites_copy))
+        return (hole, up_sites_copy)
+
 
 def local_energy(state, psi, basis, basis_dict, H, device, L):
     """
@@ -214,12 +261,76 @@ def local_energy_coeff(state, psi, basis, basis_dict, H, device, L):
         else:
             s_p_onehot = torch.tensor(state_to_onehot(state_p, L), dtype=torch.float32, device=device).unsqueeze(0)
             psi_sp = psi(s_p_onehot)
-        ratio = psi_sp / (psi_s + 1e-12)
+        ratio = psi_sp / psi_s #(psi_s + 1e-12)
         E_loc = E_loc + coeff * ratio
     return E_loc
 
 
 
+class GeometricPool1d(nn.Module):
+    """Wrapper to signed geometric-mean (product) pooling.
+
+    Modes:
+      - 'geom': signed geometric mean (exp(mean(log(|x|)))) * sign(prod(x))
+                numerically stable via clamp(eps). Zero entries produce zero output.
+    Input expected shape: (B, C, L) -> output shape: (B, C)
+    """
+    def __init__(self, eps=1e-12):
+        super().__init__()
+        self.eps = float(eps)
+
+    def forward(self, x):
+        # x: (B, C, L)
+        # geom: signed geometric mean across last dim
+        # compute sign of product
+        sign = torch.prod(torch.sign(x), dim=-1)   # (B, C)
+        # compute mean log of absolute values (stable)
+        log_abs = torch.log(torch.clamp(torch.abs(x), min=self.eps))
+        mean_log = torch.mean(log_abs, dim=-1)    # (B, C)
+        geom = torch.exp(mean_log)                # (B, C)
+        return sign * geom
+    
+class PhysicalNN(nn.Module):
+    def __init__(self, L, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, 
+                 holewave=False):
+        super(PhysicalNN, self).__init__()
+        self.pad = (kernel_size-1)//2
+        self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        self.pool = GeometricPool1d()
+        #self.fc1 = nn.Linear(hidden_dim*(L//2)+L, hidden_dim)
+        self.fc1 = nn.Linear(hidden_dim+L, hidden_dim)
+        self.finallayer = nn.Linear(hidden_dim, 1)
+
+        self.holewave=holewave
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        # build mask: True for positions that are NOT the hole
+        idx = torch.arange(L, device=device)
+        mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # select non-hole positions and reshape -> (B, L-1, C)
+        x_nohole = x[mask].view(batch_size, L - 1, C)
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x_nohole.permute(0, 2, 1)
+        x = torch.tanh(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        #x = x.view(batch_size, -1)  # flatten
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        # add hole position encoding to flattened vector
+        # make hole position one-hot vector
+        hole_vec = torch.zeros(batch_size, L, device=device)
+        if self.holewave:
+            hole_vec[torch.arange(batch_size), hole_idx] = 1.0
+        x = torch.cat([x, hole_vec], dim=1)
+        x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+        #x = torch.tanh(x)
+        
+        return x.squeeze(-1)
 
 
 

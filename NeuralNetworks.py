@@ -553,3 +553,53 @@ class LdepConv2d(nn.Module):
         x = x.permute(0, 2, 1)
         x = self.layers(x)
         return x.squeeze(-1)
+    
+
+
+
+class LdepConvHoles(nn.Module):
+    def __init__(self, L, nhole=2, in_channels=4, hidden_dim=32, kernel_size=3, stride=2):
+        super(LdepConvHoles, self).__init__()
+        self.pad = (kernel_size-1)//2
+        self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        self.pool = GeometricPool1d()
+        #self.fc1 = nn.Linear(hidden_dim*(L//2)+L, hidden_dim)
+        self.fc1 = nn.Linear(hidden_dim+L, hidden_dim)
+        self.finallayer = nn.Linear(hidden_dim, 1)
+        self.nhole = nhole
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # obtain  holes per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,L,4)) holes are marked by channel 0 == 1 
+        hole_mask = (x[:, :, 0] == 1)   # (B, L) boolean mask
+        # vectorized indices: (N,2) -> (batch_idx, pos)
+        idxs = torch.nonzero(hole_mask, as_tuple=False)    # (B*nhole, 2)
+        # positions grouped by batch must be exactly nhole per batch
+        hole_pos = idxs[:, 1].view(batch_size, self.nhole).to(device)  # (B, nhole)
+        # build keep-mask (True = keep non-hole positions): vectorized
+        hole_positions_mask = torch.zeros(batch_size, L, dtype=torch.bool, device=device)
+        rows = torch.arange(batch_size, device=device).unsqueeze(1).expand(-1, self.nhole)  # (B, nhole)
+        hole_positions_mask[rows, hole_pos] = True
+
+        mask = ~hole_positions_mask  # (B, L) True for non-hole sites
+        # select non-hole positions and reshape -> (B, L-1, C)
+        x_nohole = x[mask].view(batch_size, L - self.nhole, C)
+        # x shape: (batch, L, 4) -> (batch, 4, L)
+        x = x_nohole.permute(0, 2, 1)
+        x = torch.tanh(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        #x = x.view(batch_size, -1)  # flatten
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        # add hole position encoding to flattened vector
+        # make hole position one-hot vector
+        hole_vec = torch.zeros(batch_size, L, device=device)
+        # set the positions of holes to be 1 in the hole_vec of size L
+        hole_vec.scatter_(1, hole_pos, 1.0)
+        x = torch.cat([x, hole_vec], dim=1)
+        x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+        #x = torch.tanh(x)
+        
+        return x.squeeze(-1)

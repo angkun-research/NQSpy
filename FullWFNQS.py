@@ -20,16 +20,16 @@ print("rescale factor:", rescale)
 
 in_channels=4
 hidden_dim = 32 #32
-kernel_size = 2 #16
+kernel_size = 3 #16
 stride = 2
 activation = 'tanh'
 holewave = True #False 
 # model = nnets.ConvSkipHole(in_channels=in_channels, hidden_dim=hidden_dim, 
 #                            kernel_size=kernel_size, stride=stride,
 #                            activation=activation, holewave=holewave)
-model = nnets.LdepConvSkipHole(L, in_channels=in_channels, hidden_dim=hidden_dim,
-                               kernel_size=kernel_size, stride=stride,holewave=holewave)
-# model = nnets.LdepConv2d(L, in_channels=in_channels, hidden_dim=hidden_dim,kernel_size=kernel_size)
+# model = nnets.LdepConvSkipHole(L, in_channels=in_channels, hidden_dim=hidden_dim,
+#                                kernel_size=kernel_size, stride=stride,holewave=holewave)
+model = nnets.LdepConv2d(L, in_channels=in_channels, hidden_dim=hidden_dim,kernel_size=kernel_size)
 #print number of parameters
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Total trainable parameters: {total_params}")
@@ -39,7 +39,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 
 # Training loop (example: 500 epochs)
-for epoch in range(5000):
+for epoch in range(2000):
     optimizer.zero_grad()
     outputs = model(X)
     loss = criterion(outputs, y*rescale)
