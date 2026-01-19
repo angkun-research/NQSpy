@@ -6,7 +6,8 @@ using ITensorMPS
 using Combinatorics
 using ProgressBars
 
-function hamiltonian(sites::Vector{<:Index}, t1,t2;U=10^10,tJ=false)
+function hamiltonian(sites::Vector{<:Index}, t1,t2;
+    U=10^10,tJ=true,J1=1.0, J2=1.0)
     #sites = siteinds("Electron", N;conserve_qns=true)
     L = length(sites)
     ampo = OpSum()
@@ -26,6 +27,17 @@ function hamiltonian(sites::Vector{<:Index}, t1,t2;U=10^10,tJ=false)
     if !tJ
         for j = 1:L
             ampo += U, "Nup", j, "Ndn", j
+        end
+    else
+        for j = 1:L-1
+            ampo += J1/2, "Splus", j, "Sminus", j+1
+            ampo += J1/2, "Sminus", j, "Splus", j+1
+            ampo += J1, "Sz", j, "Sz", j+1
+        end
+        for j = 1:K
+            ampo += J2/2, "Splus", 2*j-1, "Sminus", 2*j+1
+            ampo += J2/2, "Sminus", 2*j-1, "Splus", 2*j+1 
+            ampo += J2, "Sz", 2*j-1, "Sz", 2*j+1
         end
     end
     #@show ampo
@@ -125,27 +137,37 @@ function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
     #return p
 end
 
-N = 11 #50 + 1
+N = 9 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
-t1 = 1.0
-t2 = 0.5 #0.5 #-1.0
+t1 = 0.0 #1.0
+t2 = 0.0 # 0.5 #0.5 #-1.0
 U = 10^10 # need to be very large to both prohibit double occupancy and improve convergence
 tJ = true
+J1 = 1.0
+J2 = 1.0
 
-HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ);
+HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ, J1=J1, J2=J2);
 
 state0 = [isodd(i) ? "Up" : "Dn" for i in 1:length(sites)]
-#state0[6] = "Emp" # add one hole
-#state0[5] = "Emp" 
+state0[5] = "Emp" # add one hole
+state0[6] = "Emp" 
 #state0 = ["Up" for i in 1:length(sites)] # empty lattice
 state0[1] = "Emp"
-state0[2] = "Emp"
-#psi0 = randomMPS(sites,state0; linkdims=20)
-psi0 = productMPS(sites, state0) # better for large U
+#state0[10] = "Emp"
+# for j in 11:length(sites)
+#     if isodd(j)
+#         state0[j] = "Dn"
+#     else
+#         state0[j] = "Up"
+#     end
+# end
+#state0[2] = "Emp"
+psi0 = randomMPS(sites,state0; linkdims=50)
+#psi0 = productMPS(sites, state0) # better for large U
 
 nsweeps = 100 # number of sweeps is 5
-maxdim = [256]#[16,16,16,16,16,32,32,32,32,32,
+maxdim = [1024]#[16,16,16,16,16,32,32,32,32,32,
         #64,64,64,64,64,128,128,128,128,128,
         #256,256,256,256,256,512,512,512,512,512,
         #1024,1024,1024,1024,1024,2048,2048] # gradually increase states kept
@@ -155,12 +177,15 @@ energy, psi = dmrg(HMPO,psi0; nsweeps, cutoff, maxdim);
 # EE = sort(EE; rev=true)
 # scatter(EE[1:80]; xlabel=L"k", ylabel=L"\lambda_k", yaxis=:log)
 #energy, psi = dmrg(HMPO,psi; nsweeps, cutoff, maxdim);
-# EEs = zeros(N-1)
-# for cut = 1:N-1
-#     EEs[cut] = EntanglementEntropy(psi, cut=cut)
-#     #println("Cut: $cut, S_ent: $(EEs[cut])")
-# end
-# scatter(1:N-1, EEs; xlabel="Cut", ylabel="S", legend=false)
+EEs = zeros(N-1)
+for cut = 1:N-1
+    EEs[cut] = EntanglementEntropy(psi, cut=cut)
+    if isnan(EEs[cut]) # NaN
+        EEs[cut] = 0.0
+    end
+    #println("Cut: $cut, S_ent: $(EEs[cut])")
+end
+plot(1:N-1, EEs;marker=:circle, xlabel="Cut", ylabel="S", legend=false)
 # savefig("~/Desktop/Fig3.pdf")
 # use analytical state as initial state
 rvb_basis, rvb_coeffs = RVB_state(N)

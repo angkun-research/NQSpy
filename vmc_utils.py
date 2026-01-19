@@ -3,6 +3,8 @@ import random
 import itertools
 import torch
 import torch.nn as nn
+import scipy.sparse as sp
+import numpy.linalg as la
 
 # Neural network definition
 # fully connected
@@ -34,7 +36,7 @@ def build_MB_basis(L):
             basis.append((hole, up_sites))
     return basis
 
-def build_Hamiltonian(L, t1, t2, basis):
+def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0):
     """
     Build the many-body Hamiltonian for the infinite-U Hubbard model.
     Args:
@@ -64,6 +66,20 @@ def build_Hamiltonian(L, t1, t2, basis):
                 new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
                 new_state = (neighbor, new_up_sites)
                 H[idx, basis_dict[new_state]] -= t1
+        # NN spin exchange interaction
+        if J1 != 0.0:
+            for site in range(L-1):
+                if site != hole and site+1 != hole:
+                    spin_i = 1 if site in up_sites else -1
+                    spin_j = 1 if site+1 in up_sites else -1
+                    H[idx, idx] += (J1 / 4.0) * spin_i * spin_j # S_i^z S_j^z term
+                    if spin_i != spin_j:
+                        if spin_i == 1:
+                            flipped_up_sites = tuple(sorted([s if s != site else site+1 for s in up_sites]))
+                        else:
+                            flipped_up_sites = tuple(sorted([s if s != site+1 else site for s in up_sites]))
+                        flipped_state = (hole, flipped_up_sites)
+                        H[idx, basis_dict[flipped_state]] += (J1 / 2.0) # S_i^+ S_j^- + S_i^- S_j^+ term
 
         # NNN hopping: only between odd sites (even in python)
         if hole % 2 == 0:
@@ -81,8 +97,127 @@ def build_Hamiltonian(L, t1, t2, basis):
                     new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
                     new_state = (neighbor, new_up_sites)
                     H[idx, basis_dict[new_state]] -= t2*(-1) # sign factor for NNN hopping for many-body
-
+        # NNN spin exchange interaction
+        if J2 != 0.0:
+            for site in range(0, L-2, 2): # even sites only
+                if site != hole and site+2 != hole:
+                    spin_i = 1 if site in up_sites else -1
+                    spin_j = 1 if site+2 in up_sites else -1
+                    H[idx, idx] += (J2 / 4.0) * spin_i * spin_j # S_i^z S_j^z term
+                    if spin_i != spin_j:
+                        if spin_i == 1:
+                            flipped_up_sites = tuple(sorted([s if s != site else site+2 for s in up_sites]))
+                        else:
+                            flipped_up_sites = tuple(sorted([s if s != site+2 else site for s in up_sites]))
+                        flipped_state = (hole, flipped_up_sites)
+                        H[idx, basis_dict[flipped_state]] += (J2 / 2.0) # S_i^+ S_j^- + S_i^- S_j^+ term
+               
     return H
+
+def build_Hamiltonian_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0):
+    """
+    Build Hamiltonian as adjacency lists: for each basis index i return arrays
+    of connected indices and matrix elements H[i, j].
+    Returns:
+      neighbors_idx: list of 1D np.int32 arrays (columns for each row)
+      neighbors_val: list of 1D np.float64 arrays (values for each row)
+    """
+    basis_dict = {state: idx for idx, state in enumerate(basis)}
+    nbasis = len(basis)
+    neighbors = [[] for _ in range(nbasis)]
+
+    for idx, (hole, up_sites) in enumerate(basis):
+        # NN hopping
+        for delta in [-1, 1]:
+            neighbor = hole + delta
+            if neighbor < 0 or neighbor >= L:
+                continue
+            if neighbor not in up_sites:
+                new_state = (neighbor, up_sites)
+                j = basis_dict[new_state]
+                neighbors[idx].append((j, -t1))
+            else:
+                new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                new_state = (neighbor, new_up_sites)
+                j = basis_dict[new_state]
+                neighbors[idx].append((j, -t1))
+        # NN spin exchange interaction
+        if J1 != 0.0:
+            for site in range(L-1):
+                if site != hole and site+1 != hole:
+                    spin_i = 1 if site in up_sites else -1
+                    spin_j = 1 if site+1 in up_sites else -1
+                    diag_coeff = (J1 / 4.0) * spin_i * spin_j
+                    neighbors[idx].append((idx, diag_coeff))  # diagonal term
+                    if spin_i != spin_j:
+                        if spin_i == 1:
+                            flipped_up_sites = tuple(sorted([s if s != site else site+1 for s in up_sites]))
+                        else:
+                            flipped_up_sites = tuple(sorted([s if s != site+1 else site for s in up_sites]))
+                        flipped_state = (hole, flipped_up_sites)
+                        j = basis_dict[flipped_state]
+                        neighbors[idx].append((j, J1 / 2.0))  # off-diagonal term
+
+        # NNN hopping (same rule as original)
+        if hole % 2 == 0:
+            for delta in [-2, 2]:
+                neighbor = hole + delta
+                if neighbor < 0 or neighbor >= L:
+                    continue
+                if neighbor not in up_sites:
+                    j = basis_dict[(neighbor, up_sites)]
+                    neighbors[idx].append((j, -t2 * (-1)))
+                else:
+                    new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                    j = basis_dict[(neighbor, new_up_sites)]
+                    neighbors[idx].append((j, -t2 * (-1)))
+        # NNN spin exchange interaction
+        if J2 != 0.0:
+            for site in range(0, L-2, 2): # even sites only
+                if site != hole and site+2 != hole:
+                    spin_i = 1 if site in up_sites else -1
+                    spin_j = 1 if site+2 in up_sites else -1
+                    diag_coeff = (J2 / 4.0) * spin_i * spin_j
+                    neighbors[idx].append((idx, diag_coeff))  # diagonal term
+                    if spin_i != spin_j:
+                        if spin_i == 1:
+                            flipped_up_sites = tuple(sorted([s if s != site else site+2 for s in up_sites]))
+                        else:
+                            flipped_up_sites = tuple(sorted([s if s != site+2 else site for s in up_sites]))
+                        flipped_state = (hole, flipped_up_sites)
+                        j = basis_dict[flipped_state]
+                        neighbors[idx].append((j, J2 / 2.0))  # off-diagonal term
+
+    neighbors_idx = [np.array([p[0] for p in row], dtype=np.int32) for row in neighbors]
+    neighbors_val = [np.array([p[1] for p in row], dtype=np.float64) for row in neighbors]
+    return neighbors_idx, neighbors_val
+
+def adjlist_to_csr(neighbors_idx, neighbors_val):
+    """
+    Convert adjacency lists to a scipy.sparse.csr_matrix.
+    neighbors_idx / neighbors_val: lists of 1D arrays per row.
+    Returns: scipy.sparse.csr_matrix
+    """
+    rows = []
+    cols = []
+    data = []
+    for i, (cols_i, vals_i) in enumerate(zip(neighbors_idx, neighbors_val)):
+        if cols_i.size == 0:
+            continue
+        rows.extend([i] * int(cols_i.size))
+        cols.extend(cols_i.tolist())
+        data.extend(vals_i.tolist())
+
+    if len(data) == 0:
+        nbasis = len(neighbors_idx)
+        return sp.csr_matrix((nbasis, nbasis), dtype=np.float64)
+
+    rows = np.array(rows, dtype=np.int32)
+    cols = np.array(cols, dtype=np.int32)
+    data = np.array(data, dtype=np.float64)
+    nbasis = len(neighbors_idx)
+    return sp.csr_matrix((data, (rows, cols)), shape=(nbasis, nbasis))
+
 
 def state_to_onehot(state, L):
     """
@@ -230,7 +365,6 @@ class CoeffAnsatz(nn.Module):
     def forward(self, x):
         raise RuntimeError("CoeffAnsatz.forward is not implemented. Use get_by_index or get_all().")
 
-# ...existing code...
 
 def local_energy_coeff(state, psi, basis, basis_dict, H, device, L):
     """
@@ -328,11 +462,180 @@ class PhysicalNN(nn.Module):
         x = torch.cat([x, hole_vec], dim=1)
         x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
         x = self.finallayer(x)
-        #x = torch.tanh(x)
-        
+        #x = torch.tanh(x) #does not matter??
+
+        normscale = 1 #(2 ** ((L-1) // 4))*np.sqrt(L)  # scaling factor for normalization
+        x = x / normscale
         return x.squeeze(-1)
 
 
 
+def local_energy_from_adjlist(state, psi, basis, basis_dict, neighbors_idx, neighbors_val, device, L):
+    """
+    Compute local energy using adjacency lists neighbors_idx / neighbors_val.
+    neighbors_idx[i], neighbors_val[i] are 1D numpy arrays for row i.
+    """
+    idx = basis_dict[state]
+    nbrs = neighbors_idx[idx]
+    vals = neighbors_val[idx]
+
+    # get psi_s
+    if hasattr(psi, "get_by_index"):
+        psi_s = psi.get_by_index(idx)
+        if not torch.is_tensor(psi_s):
+            psi_s = torch.tensor(psi_s, device=device)
+        else:
+            psi_s = psi_s.to(device)
+    else:
+        s_onehot = torch.tensor(state_to_onehot(state, L), dtype=torch.float32, device=device).unsqueeze(0)
+        psi_s = psi(s_onehot)
+
+    E_loc = torch.zeros(1, device=device, dtype=psi_s.dtype)
+
+    # iterate neighbors
+    for j, val in zip(nbrs.tolist(), vals.tolist()):
+        coeff = torch.tensor(val, device=device, dtype=psi_s.dtype)
+        # get psi_sp
+        if hasattr(psi, "get_by_index"):
+            psi_sp = psi.get_by_index(int(j))
+            if not torch.is_tensor(psi_sp):
+                psi_sp = torch.tensor(psi_sp, device=device, dtype=psi_s.dtype)
+            else:
+                psi_sp = psi_sp.to(device, dtype=psi_s.dtype)
+        else:
+            state_p = basis[int(j)]
+            s_p_onehot = torch.tensor(state_to_onehot(state_p, L), dtype=torch.float32, device=device).unsqueeze(0)
+            psi_sp = psi(s_p_onehot)
+
+        ratio = psi_sp / psi_s
+        E_loc = E_loc + coeff * ratio
+
+    return E_loc
 
 
+def TightBinding_coeff(L,t1,t2):
+    Htb = np.zeros((L,L), dtype=float) # tight-binding Hamiltonian in the hole basis
+    for j in range(L-1):
+        Htb[j,j+1] = -t1
+        Htb[j+1,j] = -t1
+    for j in range(0,L-2,2):
+        Htb[j,j+2] = -t2
+        Htb[j+2,j] = -t2
+    e_vals, e_vecs = la.eigh(Htb)
+    e_coeff = e_vecs[:,0]  # ground state coefficients in the hole basis
+    return e_coeff
+
+def find_state_coeff(L, state, tb_coeff):
+    hole, up_sites = state
+    sign = 1
+    first_spin = 0
+    while first_spin < L:
+        if first_spin == hole:
+            first_spin += 1
+            continue
+        second_spin = first_spin + 1
+        if second_spin == hole:
+            second_spin += 1
+        if first_spin in up_sites:
+            if second_spin in up_sites:
+                sign = 0  # zero coefficient for invalid state
+                break
+            else:
+                sign *= 1
+        else:
+            if second_spin in up_sites:
+                sign *= -1
+            else:
+                sign = 0  # zero coefficient for invalid state
+                break
+        first_spin = second_spin + 1
+
+    coeff = sign*tb_coeff[hole]
+    return coeff
+
+
+
+def local_energy_on_the_fly(state, psi, L, t1, t2, J1=0.0, J2=0.0, device='cpu'):
+    """
+    Compute local energy for `state` by enumerating connected states on-the-fly
+    (no global Hamiltonian / basis required). Returns a torch scalar on `device`.
+    """
+    hole, up_sites = state
+    up_sites = tuple(up_sites)
+    # psi_s
+    s_onehot = torch.tensor(state_to_onehot(state, L), dtype=torch.float32, device=device).unsqueeze(0)
+    psi_s = psi(s_onehot)
+    dtype = psi_s.dtype
+    E_loc = torch.zeros(1, device=device, dtype=dtype)
+    if psi_s.abs() < 1e-12:
+        psi_s = torch.tensor(1e-12, device=device, dtype=dtype)
+
+    # NN hopping: deltas -1, +1
+    for delta in (-1, 1):
+        nbr = hole + delta
+        if 0 <= nbr < L:
+            if nbr not in up_sites:
+                new_state = (nbr, up_sites)
+            else:
+                new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+                new_state = (nbr, new_up)
+            s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+            psi_sp = psi(s_p_onehot)
+            coeff = -t1
+            E_loc = E_loc + coeff * (psi_sp / psi_s)
+
+    # NNN hopping (same rule as build_Hamiltonian / adjlist): only when hole is even (hole % 2 == 0)
+    if hole % 2 == 0:
+        for delta in (-2, 2):
+            nbr = hole + delta
+            if 0 <= nbr < L:
+                if nbr not in up_sites:
+                    new_state = (nbr, up_sites)
+                else:
+                    new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+                    new_state = (nbr, new_up)
+                s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+                psi_sp = psi(s_p_onehot)
+                coeff = -t2 * (-1)  # consistent with build_Hamiltonian / adjlist
+                E_loc = E_loc + coeff * (psi_sp / psi_s)
+
+    # NN spin exchange (diagonal + possible off-diagonal flips)
+    if J1 != 0.0:
+        for site in range(L - 1):
+            if site == hole or (site + 1) == hole:
+                continue
+            spin_i = 1 if site in up_sites else -1
+            spin_j = 1 if (site + 1) in up_sites else -1
+            diag_coeff = (J1 / 4.0) * spin_i * spin_j
+            E_loc = E_loc + diag_coeff  # diagonal term (ratio = 1)
+            if spin_i != spin_j:
+                # construct flipped configuration
+                if spin_i == 1:
+                    flipped_up = tuple(sorted([s if s != site else site + 1 for s in up_sites]))
+                else:
+                    flipped_up = tuple(sorted([s if s != (site + 1) else site for s in up_sites]))
+                flipped_state = (hole, flipped_up)
+                s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+                psi_sp = psi(s_p_onehot)
+                E_loc = E_loc + (J1 / 2.0) * (psi_sp / psi_s)
+
+    # NNN spin exchange (even sites only)
+    if J2 != 0.0:
+        for site in range(0, L - 2, 2):
+            if site == hole or (site + 2) == hole:
+                continue
+            spin_i = 1 if site in up_sites else -1
+            spin_j = 1 if (site + 2) in up_sites else -1
+            diag_coeff = (J2 / 4.0) * spin_i * spin_j
+            E_loc = E_loc + diag_coeff
+            if spin_i != spin_j:
+                if spin_i == 1:
+                    flipped_up = tuple(sorted([s if s != site else site + 2 for s in up_sites]))
+                else:
+                    flipped_up = tuple(sorted([s if s != (site + 2) else site for s in up_sites]))
+                flipped_state = (hole, flipped_up)
+                s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+                psi_sp = psi(s_p_onehot)
+                E_loc = E_loc + (J2 / 2.0) * (psi_sp / psi_s)
+
+    return E_loc

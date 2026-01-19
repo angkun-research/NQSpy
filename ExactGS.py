@@ -146,7 +146,7 @@ def obtain_train_data(L, t1=1.0, t2=1.0, TBcoeff=False, Reshape=False,Normalize=
     return X, y
 
 
-def build_Hamiltonian_holes(L, t1, t2, basis):
+def build_Hamiltonian_holes(L, t1, t2, basis,J1=0.0, J2=0.0):
     """
     Build the many-body Hamiltonian for the infinite-U Hubbard model
     for a basis with an arbitrary number of holes.
@@ -154,6 +154,10 @@ def build_Hamiltonian_holes(L, t1, t2, basis):
     Each basis state is (holes_tuple, up_sites_tuple). Holes are empty sites.
     Hopping: an electron from a neighbor site moves into a hole -> the hole
     moves to the neighbor position. If the electron was up, update up_sites.
+
+    Spin interactions: add S_i^z S_j^z diagonal term (J/4 * s_i * s_j) and
+    S_i^+ S_j^- + S_i^- S_j^+ off-diagonal flip terms (J/2) when both sites
+    are occupied (not holes).
     """
     basis_dict = {state: idx for idx, state in enumerate(basis)}
     H = np.zeros((len(basis), len(basis)), dtype=float)
@@ -193,6 +197,26 @@ def build_Hamiltonian_holes(L, t1, t2, basis):
                     # new_state not in basis (shouldn't happen if basis built consistently)
                     continue
 
+        # NN spin exchange interaction (J1)
+        if J1 != 0.0:
+            for site in range(L-1):
+                if site in holes or (site+1) in holes:
+                    continue
+                spin_i = 1 if site in up_sites else -1
+                spin_j = 1 if site+1 in up_sites else -1
+                H[idx, idx] += (J1 / 4.0) * spin_i * spin_j  # S_i^z S_j^z term
+                if spin_i != spin_j:
+                    # construct flipped up_sites: move up from i to j or j to i
+                    if spin_i == 1:
+                        flipped_up_sites = tuple(sorted([s if s != site else site+1 for s in up_sites]))
+                    else:
+                        flipped_up_sites = tuple(sorted([s if s != site+1 else site for s in up_sites]))
+                    flipped_state = (holes, flipped_up_sites)
+                    try:
+                        H[idx, basis_dict[flipped_state]] += (J1 / 2.0)  # S_i^+ S_j^- + S_i^- S_j^+ term
+                    except KeyError:
+                        pass
+
         # NNN hopping: only for holes on even python indices (same rule as before)
         for hole in holes:
             if hole % 2 == 0:
@@ -220,6 +244,25 @@ def build_Hamiltonian_holes(L, t1, t2, basis):
                         H[idx, basis_dict[new_state]] -= t2 * sign_factor # preserve original sign convention
                     except KeyError:
                         continue
+
+        # NNN spin exchange interaction (J2) on even sites only (site, site+2)
+        if J2 != 0.0:
+            for site in range(0, L-2, 2):
+                if site in holes or (site+2) in holes:
+                    continue
+                spin_i = 1 if site in up_sites else -1
+                spin_j = 1 if site+2 in up_sites else -1
+                H[idx, idx] += (J2 / 4.0) * spin_i * spin_j  # S_i^z S_j^z term
+                if spin_i != spin_j:
+                    if spin_i == 1:
+                        flipped_up_sites = tuple(sorted([s if s != site else site+2 for s in up_sites]))
+                    else:
+                        flipped_up_sites = tuple(sorted([s if s != site+2 else site for s in up_sites]))
+                    flipped_state = (holes, flipped_up_sites)
+                    try:
+                        H[idx, basis_dict[flipped_state]] += (J2 / 2.0)  # flip term
+                    except KeyError:
+                        pass
 
     return H
 
