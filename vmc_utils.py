@@ -639,3 +639,12 @@ def local_energy_on_the_fly(state, psi, L, t1, t2, J1=0.0, J2=0.0, device='cpu')
                 E_loc = E_loc + (J2 / 2.0) * (psi_sp / psi_s)
 
     return E_loc
+
+
+def generate_initial_state(L):
+    hole = random.randint(0, L-1) #L // 2 # randomly choose a hole position
+    L_list = list(range(L))
+    L_remove_hole_list = [x for x in L_list if x != hole] # remove the hole site from the list
+    upsites = L_remove_hole_list[::2] # choose half of the remaining sites
+    initial_state = (hole, tuple(upsites))
+    return initial_state

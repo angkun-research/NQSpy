@@ -1,21 +1,14 @@
 import torch
 import torch.optim as optim
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import eigsh
 
 from vmc_utils import FCNet,PhysicalNN  # or ConvNet, etc.
-from vmc_utils import build_MB_basis, build_Hamiltonian
-from vmc_utils import build_Hamiltonian_adjlist,adjlist_to_csr
-from vmc_utils import state_to_onehot, local_energy,GlobalSampler, local_energy_from_adjlist
+#from vmc_utils import build_MB_basis
+from vmc_utils import state_to_onehot, GlobalSampler
 from vmc_utils import local_energy_on_the_fly
 from vmc_utils import TightBinding_coeff, find_state_coeff
-from vmc_utils import generate_initial_state
-from NeuralNetworks import PhysicsLocalLayer
 import random
 from tqdm import trange 
-import numpy.linalg as la
-from ExactGS import exact_ground_state
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -53,23 +46,20 @@ def Obtain_Sampling(initial_state, n_samples, L, pretrain=False, burnin = False,
 
     return Psis, Elocs, state
 
+def generate_initial_state(L):
+    hole = random.randint(0, L-1) #L // 2 # randomly choose a hole position
+    L_list = list(range(L))
+    L_remove_hole_list = [x for x in L_list if x != hole] # remove the hole site from the list
+    upsites = L_remove_hole_list[::2] # choose half of the remaining sites
+    initial_state = (hole, tuple(upsites))
+    return initial_state
+
 
 L = 11
 t1 = 1.0
 t2 = 0.5
 J1 = 0.0
 J2 = 0.0 #0.81/100
-# basis = build_MB_basis(L)
-# basis_dict = {state: idx for idx, state in enumerate(basis)}
-# #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
-# #Hsparse = csr_matrix(H)
-# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-# Hsparse = adjlist_to_csr(H_ind, H_val)
-# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# # eigvals, eigvecs = la.eigh(H)
-# print(f"Exact ground state energy: {eigvals[0:3]}")
-# exact_gs = eigvecs[:, 0]
-# print("Dimension of Hilbert space:", len(basis))
 
 hidden_dim = 32#128 #32
 #psi = FCNet(L,hidden_dim=32).to(device)
@@ -81,57 +71,20 @@ psi = PhysicalNN(L, hidden_dim=hidden_dim, kernel_size=2, holewave=True).to(devi
 n_params = sum(p.numel() for p in psi.parameters() if p.requires_grad)
 print(f"Number of parameters in the neural network: {n_params}")
 
-# Initialize state
-initial_state = generate_initial_state(L) #random.choice(basis)
+optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3, 1e-2)
 
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3)
-
-tb_coeff = TightBinding_coeff(L, t1, t2)
-
-n_samples = 100
-epochs = 1000
-burn_in = 1000
-
-_,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True)
-
-for step in trange(epochs, desc="VMC Sampling"):
-    psis, psi0s, state = Obtain_Sampling(state, n_samples, L, pretrain=True, tb_coeff=tb_coeff)
-    # Optimization step every batch
-    psis_tensor = torch.stack(psis).squeeze()
-    psi0s_tensor = torch.stack(psi0s).squeeze()
-    loss = torch.mean((psis_tensor - psi0s_tensor.detach()) ** 2)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    # Use stochastic reconfiguration update (encapsulated)
-    #stochastic_reconfiguration_step(psi, energies, logpsis, optimizer, lr=1e-1, reg=1e-3, device=device, noise_sigma=noise_sigma)
-    if step % (epochs//20) == 0:
-        print(f"loss: {loss.item()}")
-
-
-
-print("Pretrain finished.")
-
-# X = np.stack([state_to_onehot(state, L) for state in basis])
-# X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
-# # check final fidelity
-# with torch.no_grad():
-#     predicted_coeffs = psi(X_tensor).squeeze()
-#     print("Predicted norm:", torch.norm(predicted_coeffs).item())
-#     print("expected norm:", (2 ** ((L-1) / 4)))
-#     # compute fidelity: ensure both normalized
-#     pred_norm = predicted_coeffs / torch.norm(predicted_coeffs)
-#     print("Predicted norm after normalization:", torch.norm(pred_norm).item())
-#     exact_gs_tensor = torch.tensor(exact_gs, dtype=torch.float32, device=device)
-#     print("Exact GS norm:", torch.norm(exact_gs_tensor).item())
-#     print("Final fidelity:", torch.sum(pred_norm * exact_gs_tensor).item())
-
+save_path = "data/psi_checkpoint.pth"
+checkpoint = torch.load(save_path, map_location=device)
+psi.load_state_dict(checkpoint['model_state_dict'])
+optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
+psi.to(device)
+print("Loaded checkpoint.")
 
 # start VMC fine-tuning
 # Initialize state
-initial_state = generate_initial_state(L) #random.choice(basis)
-
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3, 1e-2)
+#basis = build_MB_basis(L)
+#initial_state = random.choice(basis)
+initial_state = generate_initial_state(L)
 
 n_samples = 1000
 epochs = 100
@@ -168,19 +121,9 @@ for k in range(5):
     E_mean = E_tensor.mean()
     print(f"Next sample {k}: <E> = {E_mean.item():.6f}")
 
-# # check final fidelity
-# with torch.no_grad():
-#     predicted_coeffs = psi(X_tensor).squeeze()
-#     print("norm of predicted coeffs:", torch.norm(predicted_coeffs).item())
-#     # compute fidelity: ensure both normalized
-#     pred_norm = predicted_coeffs / torch.norm(predicted_coeffs)
-#     exact_gs_tensor = torch.tensor(exact_gs, dtype=torch.float32, device=device)
-#     print("Final fidelity:", torch.sum(pred_norm * exact_gs_tensor).item())
-
-
 
 # Save checkpoint
-save_path = f"data/psi_L{L}_t2{t2}_hidden{hidden_dim}.pth" #"data/psi_checkpoint.pth"
+save_path = "data/psi_checkpoint.pth"
 torch.save({
     'model_state_dict': psi.state_dict(),
     'optimizer_state_dict': optimizer.state_dict(),
@@ -189,8 +132,5 @@ torch.save({
 print(f"Saved checkpoint to {save_path}")
 
 
-# checkpoint = torch.load(save_path, map_location=device)
-# psi.load_state_dict(checkpoint['model_state_dict'])
-# optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
-# psi.to(device)
-# print("Loaded checkpoint.")
+
+
