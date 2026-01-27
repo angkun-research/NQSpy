@@ -648,3 +648,51 @@ def generate_initial_state(L):
     upsites = L_remove_hole_list[::2] # choose half of the remaining sites
     initial_state = (hole, tuple(upsites))
     return initial_state
+
+
+def BalancedSampler(state, L):
+    hole, up_sites = state
+    up_sites = list(up_sites)
+    if random.random() < 0.5: # move hole
+        moves = []
+        # Move hole to NN
+        for delta in [-1, 1]:
+            neighbor = hole + delta
+            if 0 <= neighbor < L and neighbor != hole:
+                moves.append(neighbor)
+        new_hole = random.choice(moves)
+        if new_hole in up_sites:
+            # swap hole and up spin
+            idx = up_sites.index(new_hole)
+            up_sites[idx] = hole
+            up_sites = tuple(sorted(up_sites))
+        else:
+            up_sites = tuple(sorted(up_sites))
+        return (new_hole, up_sites)
+    else: # swap two nearest neighbor spins
+        spins = np.zeros(L, dtype=int)
+        for site in range(L):
+            if site == hole:
+                spins[site] = 0  # hole
+            elif site in up_sites:
+                spins[site] = 1   # up spin
+            else:
+                spins[site] = -1   # down spin
+        pairs = []
+        for k in range(L - 1):
+            if spins[k] * spins[k + 1] == -1:
+                pairs.append((k, k + 1))
+            elif spins[k+1] == 0 and k+2 < L and spins[k]*spins[k+2]==-1:
+                pairs.append((k, k + 2))
+        # randomly select a pair with opposite spins to swap
+        site1, site2 = random.choice(pairs)
+        if site1 in up_sites and site2 not in up_sites:
+            idx_up = up_sites.index(site1)
+            up_sites[idx_up] = site2
+            up_sites = tuple(sorted(up_sites))
+        elif site2 in up_sites and site1 not in up_sites:
+            idx_up = up_sites.index(site2)
+            up_sites[idx_up] = site1
+            up_sites = tuple(sorted(up_sites))
+        return (hole, up_sites)
+        

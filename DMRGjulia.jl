@@ -137,23 +137,23 @@ function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
     #return p
 end
 
-N = 9 #50 + 1
+N = 31 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
-t1 = 0.0 #1.0
-t2 = 0.0 # 0.5 #0.5 #-1.0
+t1 = 1.0 #1.0
+t2 = 0.5 # 0.5 #0.5 #-1.0
 U = 10^10 # need to be very large to both prohibit double occupancy and improve convergence
 tJ = true
-J1 = 1.0
-J2 = 1.0
+J1 = 0.0
+J2 = 0.0
 
 HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ, J1=J1, J2=J2);
 
 state0 = [isodd(i) ? "Up" : "Dn" for i in 1:length(sites)]
 state0[5] = "Emp" # add one hole
-state0[6] = "Emp" 
+#state0[6] = "Emp" 
 #state0 = ["Up" for i in 1:length(sites)] # empty lattice
-state0[1] = "Emp"
+#state0[1] = "Emp"
 #state0[10] = "Emp"
 # for j in 11:length(sites)
 #     if isodd(j)
