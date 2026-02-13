@@ -4,7 +4,6 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import eigsh
 
-from vmc_utils import FCNet,PhysicalNN  # or ConvNet, etc.
 from vmc_utils import build_MB_basis, build_Hamiltonian
 from vmc_utils import build_Hamiltonian_adjlist,adjlist_to_csr
 from vmc_utils import state_to_onehot, local_energy,GlobalSampler, local_energy_from_adjlist
@@ -12,7 +11,7 @@ from vmc_utils import local_energy_on_the_fly, propose_move
 from vmc_utils import BalancedSampler
 from vmc_utils import TightBinding_coeff, find_state_coeff
 from vmc_utils import generate_initial_state
-from NeuralNetworks import PhysicsLocalLayer
+from NeuralNetworks import ConvSkipHole,HoleOnLocalRule
 import random
 from tqdm import trange 
 import numpy.linalg as la
@@ -61,72 +60,55 @@ def Obtain_Sampling(initial_state, n_samples, L, pretrain=False, burnin = False,
     return Psis, Elocs, state
 
 
-L = 31
+L = 11 #31
 t1 = 1.0
 t2 = 0.5
-J1 = 0.0
-J2 = 0.0 #0.81/100
-# basis = build_MB_basis(L)
-# basis_dict = {state: idx for idx, state in enumerate(basis)}
-# #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
-# #Hsparse = csr_matrix(H)
-# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-# Hsparse = adjlist_to_csr(H_ind, H_val)
-# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# # eigvals, eigvecs = la.eigh(H)
-# print(f"Exact ground state energy: {eigvals[0:3]}")
+J1 = 1.0 #0.0
+J2 = 0.5 #0.0 #0.81/100
+basis = build_MB_basis(L)
+basis_dict = {state: idx for idx, state in enumerate(basis)}
+#H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
+#Hsparse = csr_matrix(H)
+H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+Hsparse = adjlist_to_csr(H_ind, H_val)
+eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# eigvals, eigvecs = la.eigh(H)
+print(f"Exact ground state energy: {eigvals[0:3]}")
 # exact_gs = eigvecs[:, 0]
 # print("Dimension of Hilbert space:", len(basis))
 
-hidden_dim = 32 #128 #32
-#psi = FCNet(L,hidden_dim=32).to(device)
-psi = PhysicalNN(L, hidden_dim=hidden_dim, kernel_size=2, holewave=True).to(device)
-#strides = (1,2,3,4,5)#(2,)
-#psi = LdepConvStrides(L, nhole=1, hidden_dim=32,kernel_size=3, strides=strides)
-#psi = PhysicsLocalLayer(n_freqs=16)
+LocalRule = ConvSkipHole(in_channels=4, hidden_dim=32, kernel_size=2, stride=2, activation='tanh')
+optimizer = optim.Adam(LocalRule.parameters(), lr=0.01)#, weight_decay=1e-3) #lr=0.01
+
+folder = "data/"
+filename = f"SignRule_t2{t2}_hidden32.pth"
+save_path = folder + filename
+checkpoint = torch.load(save_path, map_location=device)
+LocalRule.load_state_dict(checkpoint['model_state_dict'])
+optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
+LocalRule.to(device)
+print("Loaded SignRule.")
+
+
+
+psi = HoleOnLocalRule(LocalRule, L)
 # print number of parameters
 n_params = sum(p.numel() for p in psi.parameters() if p.requires_grad)
 print(f"Number of parameters in the neural network: {n_params}")
 
 
-# Initialize state
-initial_state = generate_initial_state(L) #random.choice(basis)
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3)
-tb_coeff = TightBinding_coeff(L, t1, t2)
-n_samples = 100
-epochs = 1000
-burn_in = 1000
-
-_,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True)
-
-for step in trange(epochs, desc="VMC Sampling"):
-    psis, psi0s, state = Obtain_Sampling(state, n_samples, L, pretrain=True, tb_coeff=tb_coeff)
-    # Optimization step every batch
-    psis_tensor = torch.stack(psis).squeeze()
-    psi0s_tensor = torch.stack(psi0s).squeeze()
-    loss = torch.mean((psis_tensor - psi0s_tensor.detach()) ** 2)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    # Use stochastic reconfiguration update (encapsulated)
-    #stochastic_reconfiguration_step(psi, energies, logpsis, optimizer, lr=1e-1, reg=1e-3, device=device, noise_sigma=noise_sigma)
-    if step % (epochs//20) == 0:
-        print(f"loss: {loss.item()}")
-
-print("Pretrain finished.")
-
-
-# start VMC fine-tuning
+# start VMC 
 # Initialize state
 initial_state = generate_initial_state(L) #random.choice(basis)
 
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3, 1e-2)
+optimizer = optim.Adam(psi.parameters(), lr=1e-2)
 
 n_samples = 10000
 epochs = 100
 burn_in = 1000
 
 _,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True) # burn-in
+
 
 for step in trange(epochs, desc="VMC Sampling"):
     psis, energies, state = Obtain_Sampling(state, n_samples, L,print_rate=False, Sampler=BalancedSampler)
@@ -145,7 +127,7 @@ for step in trange(epochs, desc="VMC Sampling"):
 
 print(f"Step {step}: <E> = {E_mean.item():.6f}")
 
-print("VMC 2 finished.")
+print("VMC finished.")
 
 for k in range(5):
     _, energies, state = Obtain_Sampling(state, n_samples, L)
@@ -163,3 +145,19 @@ for k in range(5):
 #     print("Final fidelity:", torch.sum(pred_norm * exact_gs_tensor).item())
 
 
+
+# Save checkpoint
+# save_path = f"data/psi_L{L}_t2{t2}_hidden{hidden_dim}.pth" #"data/psi_checkpoint.pth"
+# torch.save({
+#     'model_state_dict': psi.state_dict(),
+#     'optimizer_state_dict': optimizer.state_dict(),
+#     'epoch': step,
+# }, save_path)
+# print(f"Saved checkpoint to {save_path}")
+
+
+# checkpoint = torch.load(save_path, map_location=device)
+# psi.load_state_dict(checkpoint['model_state_dict'])
+# optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
+# psi.to(device)
+# print("Loaded checkpoint.")

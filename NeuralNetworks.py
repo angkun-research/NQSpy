@@ -135,16 +135,16 @@ class ConvSkipHole(nn.Module):
         if self.activation == 'sigmoid':
             x = torch.relu(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
         elif self.activation == 'tanh':
-            x = torch.tanh(self.layer1(x))
+            x = torch.tanh(self.layer1(x).pow(5))
         x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
         x = self.finallayer(x)
         #return torch.tanh(x).squeeze(-1)  # output in [-1, 1] # tanh behaves worse
         #return torch.sigmoid(x).squeeze(-1)
         #return x.squeeze(-1)
-        if self.activation == 'sigmoid':
-            x = torch.sigmoid(x)
-        if self.activation == 'tanh':
-            x = torch.tanh(x)
+        # if self.activation == 'sigmoid':
+        #     x = torch.sigmoid(x)
+        # if self.activation == 'tanh':
+        #     x = torch.tanh(x)
             #x = x
         
         if self.holewave:
@@ -590,7 +590,7 @@ class LdepConvHoles(nn.Module):
         x_nohole = x[mask].view(batch_size, L - self.nhole, C)
         # x shape: (batch, L, 4) -> (batch, 4, L)
         x = x_nohole.permute(0, 2, 1)
-        x = torch.tanh(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
+        x = torch.tanh(self.layer1(x).pow(5)) # shape: (batch, hidden_dim, L//2)
         #x = x.view(batch_size, -1)  # flatten
         x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
         # add hole position encoding to flattened vector
@@ -599,7 +599,7 @@ class LdepConvHoles(nn.Module):
         # set the positions of holes to be 1 in the hole_vec of size L
         hole_vec.scatter_(1, hole_pos, 1.0)
         x = torch.cat([x, hole_vec], dim=1)
-        x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
+        x = torch.tanh(self.fc1(x).pow(3))  # shape: (batch, hidden_dim)
         x = self.finallayer(x)
         #x = torch.tanh(x)
         
@@ -665,6 +665,124 @@ class LdepConvStrides(nn.Module):
         x_comb = torch.cat([feats_cat, hole_vec], dim=1)  # (B, hidden_dim*n_branches + L)
         x_out = torch.tanh(self.fc1(x_comb))
         #x_out = torch.relu(self.fc1(x_comb))
+        x_out = self.finallayer(x_out)
+
+        return x_out.squeeze(-1)
+    
+
+
+class HoleOnLocalRule(nn.Module):
+    """
+    Wrap a trained LocalRule and add L learnable amplitudes (one per hole position).
+    Output = local_rule(x) * amplitude[hole_index]
+    """
+    def __init__(self, local_rule: nn.Module, L: int, init_val: float = 1.0):
+        super(HoleOnLocalRule, self).__init__()
+        self.local_rule = local_rule
+        self.local_rule.eval()
+        for p in self.local_rule.parameters():
+            p.requires_grad = False
+        self.L = L
+        # one scalar amplitude per hole position
+        self.amplitudes = nn.Parameter(torch.full((L,), float(init_val)))
+
+    def forward(self, x):
+        # x: (B, L, C), assume channel 0 encodes hole (one-hot)
+        # get local sign/amplitude from learned local rule (expects full x)
+        with torch.no_grad():
+            local_out = self.local_rule(x)  # shape (B,)
+        # get hole indices
+        hole_idx = torch.argmax(x[:, :, 0], dim=1)  # shape (B,)
+        # index amplitudes per sample
+        amp = self.amplitudes[hole_idx]  # shape (B,)
+        return local_out * amp
+    
+
+class LdepConvPlusFC(nn.Module):
+    def __init__(self, L, nhole=1, in_channels=4, Conv_dim=32, kernel_size=3, stride=2, ifFC=False,FC_dim=32):
+        super(LdepConvPlusFC, self).__init__()
+        self.L = L
+        self.nhole = nhole
+        self.pad = (kernel_size-1)//2
+        self.ifFC = ifFC
+        # create parallel conv branches with different strides
+        self.conv = nn.Conv1d(in_channels, Conv_dim, kernel_size=kernel_size, padding=self.pad, stride=stride)
+        
+        # one pooling module per branch (keeps feature dim = hidden_dim)
+        self.pool = GeometricPool1d()
+        #self.maxpool = nn.AdaptiveMaxPool1d(1)
+        #self.pools = nn.ModuleList([nn.AdaptiveAvgPool1d(5) for _ in self.strides])
+
+        # add simple conv branch
+        #self.conv_0 = nn.Conv1d(in_channels, hidden_dim, kernel_size=kernel_size, padding=self.pad, stride=1)
+        # fc input: concatenated pooled features from each branch + L-sized hole one-hot
+        #self.fc_2 = nn.Linear(2*hidden_dim+L, 2*hidden_dim)
+        #self.fc_2 = nn.Linear(hidden_dim+32+L, 32+hidden_dim)
+        #self.fc_2 = nn.Linear(32+L, 32)
+        #self.fc1 = nn.Linear(hidden_dim * len(self.strides)*5 + L, hidden_dim)
+        #self.finallayer = nn.Linear(hidden_dim, 1)
+        #self.finallayer = nn.Linear(32+hidden_dim, 1)
+
+        if self.ifFC:
+            self.fc_squence = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(L*in_channels, FC_dim),
+                nn.ReLU(),
+                nn.Linear(FC_dim, FC_dim),
+                nn.ReLU()
+            )
+            self.fc_2 = nn.Linear(Conv_dim+FC_dim+L, Conv_dim)
+            self.finallayer = nn.Linear(Conv_dim, 1)
+        else:
+            self.fc_2 = nn.Linear(Conv_dim+L, Conv_dim)
+            self.finallayer = nn.Linear(Conv_dim, 1)
+
+
+    def forward(self, x):
+        batch_size, L, C = x.shape
+        device = x.device
+        dtype = x.dtype
+
+        # obtain holes per sample encoded as channel 0 == 1
+        hole_mask = (x[:, :, 0] == 1)   # (B, L) boolean mask
+        idxs = torch.nonzero(hole_mask, as_tuple=False)    # (B*nhole, 2)
+        hole_pos = idxs[:, 1].view(batch_size, self.nhole).to(device)  # (B, nhole)
+
+        # build mask for non-hole positions
+        hole_positions_mask = torch.zeros(batch_size, L, dtype=torch.bool, device=device)
+        rows = torch.arange(batch_size, device=device).unsqueeze(1).expand(-1, self.nhole)  # (B, nhole)
+        hole_positions_mask[rows, hole_pos] = True
+        mask = ~hole_positions_mask  # True for non-hole sites
+
+        # select non-hole positions -> (B, L-nhole, C)
+        x_nohole = x[mask].view(batch_size, L - self.nhole, C)
+        x_perm = x_nohole.permute(0, 2, 1)  # (B, C, L-nhole)
+
+        # apply each conv branch and pool (each yields (B, hidden_dim))
+        feats = []
+        y1 = torch.tanh(self.conv(x_perm).pow(5))
+        y1 = self.pool(y1).squeeze(-1)  # (B, hidden_dim,5)
+        feats.append(y1)
+        hole_vec = torch.zeros(batch_size, L, device=device)
+        hole_vec[torch.arange(batch_size), hole_pos[:,0]] = 1.0
+        feats.append(hole_vec)
+        if self.ifFC:
+            y2 = self.fc_squence(x)
+            feats.append(y2)
+
+        # y3 = torch.tanh(self.conv_0(x_perm))
+        # y3 = self.maxpool(y3).squeeze(-1)
+        # feats.append(y3)
+
+        feats_cat = torch.cat(feats, dim=1)  # (B, hidden_dim * n_branches)
+    
+        # combine branch features + hole encoding
+        #x_out = torch.tanh(self.fc_2(feats_cat))
+        #x_out = torch.relu(self.fc1(x_comb))
+        #x_out = self.finallayer(x_out)
+
+        x_out = torch.tanh(self.fc_2(feats_cat).pow(3)) # best pow(3)
+        #x_out = torch.relu(self.fc_2(feats_cat)) 
         x_out = self.finallayer(x_out)
 
         return x_out.squeeze(-1)

@@ -40,7 +40,7 @@ state = random.choice(basis)
 optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3)
 
 batch_size = 100
-n_steps = 1000*batch_size
+n_steps = 10000*batch_size
 burn_in = batch_size
 samples = []
 #energies = []

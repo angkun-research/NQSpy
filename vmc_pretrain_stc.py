@@ -9,6 +9,7 @@ from vmc_utils import build_MB_basis, build_Hamiltonian
 from vmc_utils import build_Hamiltonian_adjlist,adjlist_to_csr
 from vmc_utils import state_to_onehot, local_energy,GlobalSampler, local_energy_from_adjlist
 from vmc_utils import local_energy_on_the_fly, propose_move
+from vmc_utils import BalancedSampler
 from vmc_utils import TightBinding_coeff, find_state_coeff
 from vmc_utils import generate_initial_state
 from NeuralNetworks import PhysicsLocalLayer
@@ -60,7 +61,7 @@ def Obtain_Sampling(initial_state, n_samples, L, pretrain=False, burnin = False,
     return Psis, Elocs, state
 
 
-L = 11
+L = 31
 t1 = 1.0
 t2 = 0.5
 J1 = 0.0
@@ -79,10 +80,10 @@ J2 = 0.0 #0.81/100
 
 hidden_dim = 32 #128 #32
 #psi = FCNet(L,hidden_dim=32).to(device)
-psi = PhysicalNN(L, hidden_dim=hidden_dim, kernel_size=2, holewave=True).to(device)
+#psi = PhysicalNN(L, hidden_dim=hidden_dim, kernel_size=2, holewave=True).to(device)
 #strides = (1,2,3,4,5)#(2,)
 #psi = LdepConvStrides(L, nhole=1, hidden_dim=32,kernel_size=3, strides=strides)
-#psi = PhysicsLocalLayer(n_freqs=16)
+psi = PhysicsLocalLayer(n_freqs=16)
 # print number of parameters
 n_params = sum(p.numel() for p in psi.parameters() if p.requires_grad)
 print(f"Number of parameters in the neural network: {n_params}")
@@ -90,12 +91,12 @@ print(f"Number of parameters in the neural network: {n_params}")
 # Initialize state
 initial_state = generate_initial_state(L) #random.choice(basis)
 
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3)
+optimizer = optim.Adam(psi.parameters(), lr=1e-2) #1e-3)
 
 tb_coeff = TightBinding_coeff(L, t1, t2)
 
 n_samples = 100
-epochs = 1000
+epochs = 10000
 burn_in = 1000
 
 _,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True)
@@ -137,7 +138,7 @@ print("Pretrain finished.")
 # Initialize state
 initial_state = generate_initial_state(L) #random.choice(basis)
 
-optimizer = optim.Adam(psi.parameters(), lr=1e-3) #1e-3, 1e-2)
+optimizer = optim.Adam(psi.parameters(), lr=1e-2) #1e-3, 1e-2)
 
 n_samples = 10000
 epochs = 100
@@ -169,7 +170,7 @@ _,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True) # burn-in
 # print("VMC 1 finished.")
 
 for step in trange(epochs, desc="VMC Sampling"):
-    psis, energies, state = Obtain_Sampling(state, n_samples, L,print_rate=False, Sampler=propose_move)
+    psis, energies, state = Obtain_Sampling(state, n_samples, L,print_rate=False, Sampler=BalancedSampler)
     # Optimization step every batch
     E_tensor = torch.stack(energies).squeeze()
     psis_tensor = torch.stack(psis).squeeze()
