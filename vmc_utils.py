@@ -5,6 +5,9 @@ import torch
 import torch.nn as nn
 import scipy.sparse as sp
 import numpy.linalg as la
+import math
+
+from torch.func import vmap, jacrev, functional_call
 
 # Neural network definition
 # fully connected
@@ -764,3 +767,199 @@ class NNConvStrides(nn.Module):
         x_out = self.finallayer(x_out)
 
         return x_out.squeeze(-1)
+    
+
+class VBSNN(nn.Module):
+    """
+    Fast jacobian ready stable version of VBS neural network. 
+    """
+    def __init__(self, L, in_channels=4, Conv_dim=32, kernel_size=3, stride=2):
+        super(VBSNN, self).__init__()
+        self.L = L
+        self.nhole = 1
+        self.pad = (kernel_size-1)//2
+        # create parallel conv branches with different strides
+        self.conv = nn.Conv1d(in_channels, Conv_dim, kernel_size=kernel_size, padding=self.pad, stride=stride)
+        
+        # one pooling module per branch (keeps feature dim = hidden_dim)
+        self.pool = GeometricPool1d()
+
+        self.fc_2 = nn.Linear(Conv_dim+L, Conv_dim)
+        self.finallayer = nn.Linear(Conv_dim, 1)
+
+    def forward(self, x):
+        batch_size, L, C = x.shape
+        device = x.device
+        dtype = x.dtype
+
+        # obtain holes per sample encoded as channel 0 == 1
+        hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        hole_pos = torch.argmax(hole_mask, dim=1)  # (B,) — fixed shape, vmap-safe 
+
+        # Build indices [0,1,...,hole-1, hole+1,...,L-1] per sample
+        idx = torch.arange(L - self.nhole, device=device).unsqueeze(0).expand(batch_size, -1)  # (B, L-nhole)
+        idx = idx + (idx >= hole_pos.unsqueeze(1)).long()  # shift indices past the hole
+        x_nohole = torch.gather(x, 1, idx.unsqueeze(-1).expand(-1, -1, C))  # (B, L-nhole, C)
+        x_perm = x_nohole.permute(0, 2, 1)  # (B, C, L-nhole)
+
+        # apply each conv branch and pool (each yields (B, hidden_dim))
+        feats = []
+        y1 = torch.tanh(self.conv(x_perm).pow(5))
+        y1 = self.pool(y1).squeeze(-1)  # (B, hidden_dim,5)
+        feats.append(y1)
+        hole_vec = hole_mask  # already (B, L) with 1.0 at hole position
+        feats.append(hole_vec)
+
+        feats_cat = torch.cat(feats, dim=1)  # (B, hidden_dim * n_branches)
+
+        x_out = torch.tanh(self.fc_2(feats_cat).pow(3)) # best pow(3)
+        x_out = self.finallayer(x_out)
+
+        return x_out.squeeze(-1)
+
+
+def compute_log_psi_jacobian_vmap(psi, samples_onehot, device):
+    """Vectorized Jacobian via torch.func (PyTorch >= 2.0)."""
+    x = torch.from_numpy(samples_onehot).float().to(device)
+
+    params_dict = {k: v for k, v in psi.named_parameters() if v.requires_grad}
+    param_names = list(params_dict.keys())
+
+    def log_psi_single(params_dict, x_single):
+        out = functional_call(psi, params_dict, (x_single.unsqueeze(0),))
+        return torch.log(torch.abs(out.squeeze()) + 1e-12)
+
+    # jacrev over params_dict for a single sample, then vmap over batch
+    jac_fn = vmap(jacrev(log_psi_single), in_dims=(None, 0))
+    jac_dict = jac_fn(params_dict, x)  # dict of {name: (Ns, *param_shape)}
+
+    # Flatten and concatenate
+    rows = []
+    for name in param_names:
+        rows.append(jac_dict[name].reshape(x.shape[0], -1))
+    return torch.cat(rows, dim=1)  # (Ns, Np)
+
+def sr_gradient(J, E_loc, tau=1e-3):
+    """Stochastic reconfiguration: solve (J^T J + tau*I) delta_theta = J^T E_loc.
+
+    Args:
+        J: Jacobian of log|psi|, shape (Ns, Np).
+        E_loc: local energies, shape (Ns,).
+        tau: diagonal regularization shift.
+
+    Returns:
+        delta_theta: natural gradient update, shape (Np,).
+    """
+    J64 = J.detach().double()
+    E64 = E_loc.detach().double()
+    Ns = J64.shape[0]
+    S = J64.T @ J64 # /Ns
+    S.diagonal().add_(tau)
+    f = J64.T @ E64 # /Ns
+    delta_theta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
+    #delta_theta = torch.linalg.lstsq(S, f.unsqueeze(-1)).solution.squeeze(-1)
+    return delta_theta.float()
+
+
+def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
+    """Perform one stochastic reconfiguration parameter update in-place.
+    
+    Args:
+        psi: neural network wavefunction model.
+        sampled_states: list of sampled states from MCMC.
+        E_tensor: tensor of local energies, shape (Ns,).
+        L: system size.
+        lr: learning rate for SR update.
+        tau: diagonal regularization shift.
+        device: torch device.
+    """
+    s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
+    # Compute Jacobian of log|psi| over sampled states
+    J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
+    #J_centered = J - J.mean(dim=0, keepdim=True)
+    delta_theta = sr_gradient(J, E_loc, tau=tau)
+    with torch.no_grad():
+        offset = 0
+        for p in psi.parameters():
+            if p.requires_grad:
+                numel = p.numel()
+                p.data -= lr * delta_theta[offset:offset + numel].reshape(p.shape)
+                offset += numel
+
+
+def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burnin=False, tb_coeff=None, print_rate=False,
+                          Sampler=GlobalSampler, t1=1.0,t2=0.5, J1=0.0, J2=0.0, device='cpu'):
+    """Run multiple independent walkers in parallel (batched NN evaluation).
+
+    initial_state: single state (will be copied to initialize all walkers)
+    n_steps: number of MCMC steps per walker
+    n_walkers: number of parallel walkers
+    Returns flattened lists of psis and elocs and the list of final walker states.
+    """
+    # initialize walkers
+    n_walkers = len(initial_states)
+    states = initial_states.copy()
+    Psis = []
+    Elocs = []
+    Sampled_states = []
+    accept_count = 0
+
+    for _ in range(n_steps):
+        # propose moves for all walkers (kept simple: use Sampler per-walker)
+        proposed = [Sampler(s, L) for s in states]
+
+        # build batched one-hot inputs efficiently via numpy.stack -> torch.from_numpy
+        s_np = np.stack([state_to_onehot(s, L) for s in states])
+        new_np = np.stack([state_to_onehot(s, L) for s in proposed])
+        s_batch = torch.from_numpy(s_np).float().to(device)
+        new_batch = torch.from_numpy(new_np).float().to(device)
+
+        # evaluate psi for all current and proposed states in one forward pass
+        psi_vals = psi(s_batch).squeeze()
+        psi_new_vals = psi(new_batch).squeeze()
+
+        # compute acceptance probabilities (vectorized)
+        denom = psi_vals.abs()**2
+        ratio = (psi_new_vals.abs()**2) / (denom + 1e-12)
+        accept_prob = torch.clamp(ratio, max=1.0)
+
+        rand = torch.rand(n_walkers, device=device)
+        accept = (rand < accept_prob).cpu().numpy()
+
+        # update walkers and collect psi values
+        for i in range(n_walkers):
+            if accept[i]:
+                states[i] = proposed[i]
+                Psis.append(psi_new_vals[i])
+                accept_count += 1
+            else:
+                Psis.append(psi_vals[i])
+            Sampled_states.append(tuple(states[i]))
+
+        if burnin:
+            continue
+
+        # compute local energies per walker (still per-walker calls)
+        for s in states:
+            if not pretrain:
+                E_loc = local_energy_on_the_fly(s, psi, L, t1, t2, J1=J1, J2=J2, device=device)
+                Elocs.append(E_loc)
+            else:
+                Elocs.append(torch.tensor(find_state_coeff(L, s, tb_coeff), device=device))
+
+    if print_rate:
+        print(f"Acceptance rate (batched): {accept_count / (n_steps * n_walkers):.4f}")
+
+    # flatten Psis/Elocs are lists of tensors -> stack
+    if len(Psis) > 0:
+        Psis_t = torch.stack(Psis).squeeze()
+    else:
+        Psis_t = torch.tensor([], device=device)
+    if len(Elocs) > 0:
+        Elocs_t = torch.stack(Elocs).squeeze()
+    else:
+        Elocs_t = torch.tensor([], device=device)
+
+    # return psis, elocs, and final states (return first state for compatibility)
+    return Psis_t, Elocs_t, states, Sampled_states

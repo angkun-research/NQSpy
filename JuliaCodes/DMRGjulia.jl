@@ -137,15 +137,15 @@ function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
     #return p
 end
 
-N = 11 #31 #50 + 1
+N = 21 #31 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
 t1 = 1.0 #1.0
 t2 = 0.5 # 0.5 #0.5 #-1.0
 U = 10^10 # need to be very large to both prohibit double occupancy and improve convergence
 tJ = true
-J1 = 0.0 #1.0
-J2 = 0.0 #0.5
+J1 = 1.0 #1.0
+J2 = 0.9 #0.5
 
 HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ, J1=J1, J2=J2);
 
@@ -206,3 +206,39 @@ energy, psi = dmrg(HMPO, gs_exact; nsweeps, cutoff, maxdim);
 inner(gs_exact', HMPO, gs_exact)
 
 inner(psi, gs_exact)
+
+
+
+
+
+"""
+Return dense parameter count = sum over sites of prod(dim.(inds(psi[j]))).
+
+If `complex=true`, returns the number of real scalar parameters assuming each
+complex entry has 2 real parameters.
+"""
+function mps_dense_parameter_count(psi::MPS; complex::Bool=false)
+    n = 0
+    for j in 1:length(psi)
+        n += prod(dim.(inds(psi[j])))
+    end
+    return complex ? 2n : n
+end
+
+"""
+Return stored parameter count for QN/block-sparse tensors: sum(nnz(psi[j])).
+
+This is often the best "how many numbers are actually stored" measure for
+QN-conserving MPS.
+If `complex=true`, returns real-scalar count for complex storage (2*nnz).
+"""
+function mps_stored_parameter_count(psi::MPS; complex::Bool=false)
+    n = 0
+    for j in 1:length(psi)
+        n += nnz(psi[j])
+    end
+    return complex ? 2n : n
+end
+
+@show mps_dense_parameter_count(psi)
+@show mps_stored_parameter_count(psi)

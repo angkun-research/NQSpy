@@ -12,6 +12,7 @@ from vmc_utils import BalancedSampler
 from vmc_utils import TightBinding_coeff, find_state_coeff
 from vmc_utils import generate_initial_state
 from vmc_utils import NNConvStrides
+from vmc_utils import stochastic_reconfiguration_matrix_free_real
 from NeuralNetworks import LdepConvPlusFC
 import random
 from tqdm import trange 
@@ -135,26 +136,30 @@ def Obtain_Sampling_batch(initial_states, n_steps, L, pretrain=False, burnin=Fal
     return Psis_t, Elocs_t, states
 
 
-L = 21 #31
+L = 11 #31
 t1 = 1.0
 t2 = 0.5
 J1 = 1.0 #0.0
-J2 = 0.5 #0.0 #0.81/100
-# basis = build_MB_basis(L)
-# basis_dict = {state: idx for idx, state in enumerate(basis)}
-# #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
-# #Hsparse = csr_matrix(H)
-# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-# Hsparse = adjlist_to_csr(H_ind, H_val)
-# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# # eigvals, eigvecs = la.eigh(H)
-# print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
-# exact_gs = eigvecs[:, 0]
-# print("Dimension of Hilbert space:", len(basis))
+J2 = 0.9 #0.0 #0.81/100
+basis = build_MB_basis(L)
+basis_dict = {state: idx for idx, state in enumerate(basis)}
+#H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
+#Hsparse = csr_matrix(H)
+H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+Hsparse = adjlist_to_csr(H_ind, H_val)
+eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# eigvals, eigvecs = la.eigh(H)
+print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
+exact_gs = eigvecs[:, 0]
+print("Dimension of Hilbert space:", len(basis))
+
+# L =21 J2=1.2, [-10.15876638 -10.04104634  -9.98258285]
+# L=21, J2=0.9, [-10.00927021  -9.88692634  -9.6925758 ]
 
 
 #psi = NNConvStrides(L, nhole=1, in_channels=4, hidden_dim=32, strides=(1,2,3,4)).to(device)
-hidden_dim = 64 #32
+# h 128, k 5 for L=7;
+hidden_dim = 32 #512 #128 #16 #32 
 kernel_size = 5 #16
 print("hidden_dim:", hidden_dim, "kernel_size:", kernel_size)
 psi = LdepConvPlusFC(L, Conv_dim=hidden_dim,kernel_size=kernel_size)
@@ -166,22 +171,24 @@ print(f"Number of parameters in the neural network: {n_params}")
 # start VMC 
 # Initialize state
 #initial_state = generate_initial_state(L) #random.choice(basis)
-n_walkers = 4 #10 #4
+n_walkers = 32 # 4
 initial_states = [generate_initial_state(L) for _ in range(n_walkers)]  # 4 parallel walkers
 
-optimizer = optim.Adam(psi.parameters(), lr=1e-3)
+optimizer = optim.Adam(psi.parameters(), lr=3e-3) # 1e-2 3e-3
 
-n_samples = 250 #250 #1000
-epochs = 1000
-burn_in = 1000
+n_samples = 64 #250 #1000
+epochs = 100
+burn_in = 64 #1000
+Sampler = BalancedSampler if J2 == J1 else GlobalSampler
 
 #_,_, state = Obtain_Sampling(initial_state, burn_in, L, burnin=True) # burn-in
 _, _, states = Obtain_Sampling_batch(initial_states, burn_in, L, burnin=True)  # burn-in for all walkers
 
-
+# record energy for every step after burn-in
+energy_record = [] 
 for step in trange(epochs, desc="VMC Sampling"):
     #psis, energies, state = Obtain_Sampling(state, n_samples, L,print_rate=False, Sampler=BalancedSampler)
-    psis, energies, states = Obtain_Sampling_batch(states, n_samples, L, print_rate=False, Sampler=BalancedSampler)
+    psis, energies, states = Obtain_Sampling_batch(states, n_samples, L, print_rate=False, Sampler=Sampler)
     # Optimization step every batch
     # E_tensor = torch.stack(energies).squeeze()
     # psis_tensor = torch.stack(psis).squeeze()
@@ -194,14 +201,20 @@ for step in trange(epochs, desc="VMC Sampling"):
     else:
         psis_tensor = torch.stack(psis).squeeze()
     E_mean = E_tensor.mean()
-    loss = 2*torch.mean((E_tensor.detach() - E_mean.detach()) * psis_tensor/psis_tensor.detach())
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+    # loss = 2*torch.mean((E_tensor.detach() - E_mean.detach()) * psis_tensor/psis_tensor.detach())
+    # optimizer.zero_grad()
+    # loss.backward()
+    # optimizer.step()
     # Use stochastic reconfiguration update (encapsulated)
-    #stochastic_reconfiguration_step(psi, energies, logpsis, optimizer, lr=1e-1, reg=1e-3, device=device, noise_sigma=noise_sigma)
-    if step % (epochs//20) == 0:
-        print(f"Step {step}: <E> = {E_mean.item():.6f}")
+    #logpsis = torch.log(psis_tensor + 1e-12)  # add small constant for numerical stability
+    # #stochastic_reconfiguration_step(psi, energies, logpsis, optimizer, lr=3e-3, reg=1e-7, device=device)
+    # stochastic_reconfiguration_matrix_free(psi, energies, logpsis, optimizer, lr=1e-2, reg=1e-7, device=device)
+    # need more testing
+    #stochastic_reconfiguration_matrix_free_real(psi, energies, logpsis, optimizer, lr=3e-3, reg=1e-7, device=device)
+    # if step % (epochs//20) == 0:
+    #     print(f"Step {step}: <E> = {E_mean.item():.6f}")
+    print(f"Step {step}: <E> = {E_mean.item():.6f}")
+    energy_record.append(E_mean.item())
 
 print(f"Step {step}: <E> = {E_mean.item():.6f}")
 
@@ -246,3 +259,10 @@ for k in range(5):
 
 # L=21, J1=1.0, J2=0.5, E=-10.22192679
 # L=11, E=-6.155918052962847; no J: -2.4298820
+
+# output energy_record to csv
+# import pandas as pd
+# df = pd.DataFrame({'Energy': energy_record})
+# csv_path = f"data/energy_record_L{L}_t2{t2}_hidden{hidden_dim}.csv"
+# df.to_csv(csv_path, index=False)
+# print(f"Saved energy record to {csv_path}")

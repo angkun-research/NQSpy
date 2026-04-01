@@ -47,12 +47,22 @@ eigval_csr, eigvecs_csr = eigsh(H_csr, k=3, which='SA')
 print(f"(CSR) Exact ground state energy: {eigval_csr[0:3]}")
 exact_gs0 = eigvecs_csr[:, 0]
 
-J1 = 10.0
-J2 = 10.0
-H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-H_csr = adjlist_to_csr(H_ind, H_val)
-eigval_csr, eigvecs_csr = eigsh(H_csr, k=3, which='SA')
-print(f"(CSR) Exact ground state energy: {eigval_csr[0:3]}")
-exact_gs1 = eigvecs_csr[:, 0]
-print(f"Fidelity between dense and csr eigvecs: {np.abs(np.dot( exact_gs0, exact_gs1))}")
+# J1 = 10.0
+# J2 = 10.0
+# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+# H_csr = adjlist_to_csr(H_ind, H_val)
+# eigval_csr, eigvecs_csr = eigsh(H_csr, k=3, which='SA')
+# print(f"(CSR) Exact ground state energy: {eigval_csr[0:3]}")
+# exact_gs1 = eigvecs_csr[:, 0]
+# print(f"Fidelity between dense and csr eigvecs: {np.abs(np.dot( exact_gs0, exact_gs1))}")
 
+J1 = 1.0
+J2s = np.arange(0.0, 2.1, 0.1)
+fidelitys = np.zeros(len(J2s))
+for i, J2 in enumerate(J2s):
+    H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+    H_csr = adjlist_to_csr(H_ind, H_val)
+    eigval_csr, eigvecs_csr = eigsh(H_csr, k=3, which='SA')
+    print(f"(CSR) Exact ground state energy for J2={J2:.1f}: {eigval_csr[0]:.4f}, {eigval_csr[1]:.4f}, {eigval_csr[2]:.4f}")
+    fidelitys[i] = np.abs(np.dot(exact_gs0, eigvecs_csr[:, 0]))
+    print(f"Fidelity with J2={J2:.1f} state: {fidelitys[i]:.8f}")

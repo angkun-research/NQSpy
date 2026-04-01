@@ -37,8 +37,12 @@ class FCNet(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
+        # flatten input: (batch, L, 4) -> (batch, 4*L)
+        x = x.view(x.size(0), -1)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
+        # x = torch.tanh(self.fc1(x).pow(3))
+        # x = torch.tanh(self.fc2(x).pow(3))
         x = self.fc3(x)
         return x.squeeze(-1)
         #return torch.tanh(x).squeeze(-1)  # tanh behaves worse
@@ -95,7 +99,7 @@ class ConvNet(nn.Module):
 class ConvSkipHole(nn.Module):
     def __init__(self, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, 
                  activation='sigmoid',holewave=False,
-                 n_freqs=8, amp_hidden=32):
+                 n_freqs=8, amp_hidden=32,nholes=1):
         super(ConvSkipHole, self).__init__()
         self.pad = (kernel_size-1)//2
         self.activation = activation
@@ -103,6 +107,7 @@ class ConvSkipHole(nn.Module):
         #self.pool = nn.AdaptiveAvgPool1d(1)  # or AdaptiveSumPool1d if available
         self.pool = GeometricPool1d()
         self.finallayer = nn.Linear(hidden_dim, 1)
+        self.nholes = nholes
 
         self.holewave=holewave
         if holewave:
@@ -125,18 +130,20 @@ class ConvSkipHole(nn.Module):
         # assume exactly one hole per sample encoded as channel 0 == 1
         # get hole indices (shape: (B,))
         hole_idx = torch.argmax(x[:, :, 0], dim=1)
-        # build mask: True for positions that are NOT the hole
-        idx = torch.arange(L, device=device)
-        mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # # build mask: True for positions that are NOT the hole
+        # idx = torch.arange(L, device=device)
+        # mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        mask = x[:, :, 0] == 0  # True for non-hole positions
         # select non-hole positions and reshape -> (B, L-1, C)
-        x_nohole = x[mask].view(batch_size, L - 1, C)
+        x_nohole = x[mask].view(batch_size, L - self.nholes, C)
         # x shape: (batch, L, 4) -> (batch, 4, L)
         x = x_nohole.permute(0, 2, 1)
         if self.activation == 'sigmoid':
             x = torch.relu(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
         elif self.activation == 'tanh':
-            x = torch.tanh(self.layer1(x).pow(5))
-        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+            x = torch.tanh(self.layer1(x).pow(1))
+        x = self.pool(x)#.squeeze(-1)  # shape: (batch, hidden_dim)
+        #x = torch.tanh(self.finallayer(x).pow(3))
         x = self.finallayer(x)
         #return torch.tanh(x).squeeze(-1)  # output in [-1, 1] # tanh behaves worse
         #return torch.sigmoid(x).squeeze(-1)
@@ -676,7 +683,7 @@ class HoleOnLocalRule(nn.Module):
     Wrap a trained LocalRule and add L learnable amplitudes (one per hole position).
     Output = local_rule(x) * amplitude[hole_index]
     """
-    def __init__(self, local_rule: nn.Module, L: int, init_val: float = 1.0):
+    def __init__(self, local_rule: nn.Module, L: int, init_val: float = 1.0, hidden_dim: int = 32):
         super(HoleOnLocalRule, self).__init__()
         self.local_rule = local_rule
         self.local_rule.eval()
@@ -684,7 +691,9 @@ class HoleOnLocalRule(nn.Module):
             p.requires_grad = False
         self.L = L
         # one scalar amplitude per hole position
-        self.amplitudes = nn.Parameter(torch.full((L,), float(init_val)))
+        #self.amplitudes = nn.Parameter(torch.full((L,), float(init_val)))
+        self.fc = nn.Linear(L, hidden_dim)
+        self.finallayer = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
         # x: (B, L, C), assume channel 0 encodes hole (one-hot)
@@ -692,10 +701,23 @@ class HoleOnLocalRule(nn.Module):
         with torch.no_grad():
             local_out = self.local_rule(x)  # shape (B,)
         # get hole indices
-        hole_idx = torch.argmax(x[:, :, 0], dim=1)  # shape (B,)
+        #hole_idx = torch.argmax(x[:, :, 0], dim=1)  # shape (B,)
         # index amplitudes per sample
-        amp = self.amplitudes[hole_idx]  # shape (B,)
-        return local_out * amp
+        #amp = self.amplitudes[hole_idx]  # shape (B,)
+        #return local_out * amp
+
+        batch_size, L, C = x.shape
+        device = x.device
+        hole_mask = (x[:, :, 0] == 1)   # (B, L) boolean mask
+        idxs = torch.nonzero(hole_mask, as_tuple=False)    # (B*nhole, 2)
+        hole_pos = idxs[:, 1].view(batch_size, 1).to(device)  # (B, nhole)
+        hole_vec = torch.zeros(batch_size, L, device=device)
+        hole_vec[torch.arange(batch_size), hole_pos[:,0]] = 1.0
+
+        yhole = self.fc(hole_vec)
+        yhole = torch.tanh(yhole.pow(3))
+        yhole = self.finallayer(yhole).squeeze(-1)
+        return local_out * yhole
     
 
 class LdepConvPlusFC(nn.Module):

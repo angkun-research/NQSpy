@@ -60,20 +60,20 @@ def Obtain_Sampling(initial_state, n_samples, L, pretrain=False, burnin = False,
     return Psis, Elocs, state
 
 
-L = 11 #31
+L = 51 #31
 t1 = 1.0
 t2 = 0.5
 J1 = 1.0 #0.0
-J2 = 0.5 #0.0 #0.81/100
-basis = build_MB_basis(L)
-basis_dict = {state: idx for idx, state in enumerate(basis)}
-#H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
-#Hsparse = csr_matrix(H)
-H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-Hsparse = adjlist_to_csr(H_ind, H_val)
-eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# eigvals, eigvecs = la.eigh(H)
-print(f"Exact ground state energy: {eigvals[0:3]}")
+J2 = 1.0 #0.0 #0.81/100
+# basis = build_MB_basis(L)
+# basis_dict = {state: idx for idx, state in enumerate(basis)}
+# #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
+# #Hsparse = csr_matrix(H)
+# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+# Hsparse = adjlist_to_csr(H_ind, H_val)
+# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# # eigvals, eigvecs = la.eigh(H)
+# print(f"Exact ground state energy: {eigvals[0:3]}")
 # exact_gs = eigvecs[:, 0]
 # print("Dimension of Hilbert space:", len(basis))
 
