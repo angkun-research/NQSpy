@@ -6,6 +6,7 @@ import torch.nn as nn
 import scipy.sparse as sp
 import numpy.linalg as la
 import gc
+from typing import Optional
 import math
 
 from torch.func import vmap, jacrev, functional_call
@@ -1042,7 +1043,7 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
     #     print(f"Current learning rate: {param_group['lr']:.4e}")
 
 
-def cleanup_memory(free_vars: list | None = None, optimizer: torch.optim.Optimizer | None = None):
+def cleanup_memory(free_vars: Optional[list] = None, optimizer: Optional[torch.optim.Optimizer] = None):
     if free_vars:
         for v in free_vars:
             try:
