@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import scipy.sparse as sp
 import numpy.linalg as la
+import gc
 import math
 
 from torch.func import vmap, jacrev, functional_call
@@ -859,15 +860,24 @@ def sr_gradient(J, E_loc, tau=1e-3):
     Returns:
         delta_theta: natural gradient update, shape (Np,).
     """
-    J64 = J.detach().double()
-    E64 = E_loc.detach().double()
-    Ns = J64.shape[0]
-    S = J64.T @ J64 # /Ns
+    # J64 = J.detach().double()
+    # E64 = E_loc.detach().double()
+    # Ns = J64.shape[0]
+    # S = J64.T @ J64 # /Ns
+    # S.diagonal().add_(tau)
+    # f = J64.T @ E64 # /Ns
+    # delta_theta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
+    # #delta_theta = torch.linalg.lstsq(S, f.unsqueeze(-1)).solution.squeeze(-1)
+    # return delta_theta.float()
+
+    # Use double precision on CPU for numerical stability
+    J64 = J.detach().cpu().double()
+    E64 = E_loc.detach().cpu().double()
+    S = J64.T @ J64
     S.diagonal().add_(tau)
-    f = J64.T @ E64 # /Ns
-    delta_theta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
-    #delta_theta = torch.linalg.lstsq(S, f.unsqueeze(-1)).solution.squeeze(-1)
-    return delta_theta.float()
+    f = J64.T @ E64
+    delta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
+    return delta.float().to(J.device)
 
 
 def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
@@ -1031,3 +1041,28 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
     # for param_group in optimizer.param_groups:
     #     print(f"Current learning rate: {param_group['lr']:.4e}")
 
+
+def cleanup_memory(free_vars: list | None = None, optimizer: torch.optim.Optimizer | None = None):
+    if free_vars:
+        for v in free_vars:
+            try:
+                # prefer clearing containers in-place
+                if hasattr(v, "clear"):
+                    v.clear()
+                else:
+                    del v
+            except Exception:
+                pass
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    # no MPS branch needed per your setup
+
+    # optional: remove optimizer GPU buffers (use if optimizer state grows)
+    if optimizer is not None:
+        for k in list(optimizer.state.keys()):
+            state = optimizer.state[k]
+            for sk in list(state.keys()):
+                if torch.is_tensor(state[sk]):
+                    state.pop(sk, None)
