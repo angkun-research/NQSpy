@@ -645,11 +645,20 @@ def local_energy_on_the_fly(state, psi, L, t1, t2, J1=0.0, J2=0.0, device='cpu')
     return E_loc
 
 
-def generate_initial_state(L):
+def generate_initial_state(L, singlet=False):
     hole = random.randint(0, L-1) #L // 2 # randomly choose a hole position
     L_list = list(range(L))
-    L_remove_hole_list = [x for x in L_list if x != hole] # remove the hole site from the list
-    upsites = L_remove_hole_list[::2] # choose half of the remaining sites
+    remaining = [x for x in L_list if x != hole] # remove the hole site from the list
+    if singlet:
+        #upsites = remaining[::2] # choose half of the remaining sites
+        # For each pair, randomly choose one spin to be up.
+        if len(remaining) % 2 != 0:
+            raise ValueError("Remaining sites must be even to form singlet pairs.")
+        upsites = [random.choice(remaining[i:i + 2]) for i in range(0, len(remaining), 2)]
+    else:
+        # randomly choose half of the remaining sites for up spins
+        upsites = random.sample(remaining, (L-1)//2)
+        upsites = sorted(upsites)
     initial_state = (hole, tuple(upsites))
     return initial_state
 
@@ -879,6 +888,8 @@ def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
     E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
     #J_centered = J - J.mean(dim=0, keepdim=True)
     delta_theta = sr_gradient(J, E_loc, tau=tau)
+    print(f"learning rate: {lr}, tau: {tau}, max update: {delta_theta.abs().max():.4e}")
+    max_update = 0.0 
     with torch.no_grad():
         offset = 0
         for p in psi.parameters():
@@ -886,6 +897,11 @@ def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
                 numel = p.numel()
                 p.data -= lr * delta_theta[offset:offset + numel].reshape(p.shape)
                 offset += numel
+                # update max update tracking
+                param_update = (lr * delta_theta[offset - numel:offset].reshape(p.shape)).abs().max().item()
+                if param_update > max_update:
+                    max_update = param_update
+    print(f"Max parameter update after applying learning rate: {max_update:.4e}")
 
 
 def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burnin=False, tb_coeff=None, print_rate=False,
@@ -963,3 +979,55 @@ def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burni
 
     # return psis, elocs, and final states (return first state for compatibility)
     return Psis_t, Elocs_t, states, Sampled_states
+
+
+
+
+def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device,
+                        adaptive_lr=False, lr=1e-3):
+    """Perform one stochastic reconfiguration update using Adam.
+    
+    Args:
+        psi: neural network wavefunction model.
+        sampled_states: list of sampled states from MCMC.
+        E_tensor: tensor of local energies, shape (Ns,).
+        L: system size.
+        optimizer: standard PyTorch optimizer (e.g., optim.Adam).
+        tau: diagonal regularization shift.
+        device: torch device.
+    """
+    s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
+    
+    # Compute Jacobian of log|psi| over sampled states
+    J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
+    
+    # delta_theta is our "Natural Gradient" (S^-1 g)
+    delta_theta = sr_gradient(J, E_loc, tau=tau)
+    print(f"tau: {tau}, max SR gradient: {delta_theta.abs().max():.4e}")
+    
+    # 1. Clear any residual gradients in PyTorch's workspace
+    optimizer.zero_grad()
+    
+    # 2. Inject the SR natural gradient into the .grad attributes
+    offset = 0
+    for p in psi.parameters():
+        if p.requires_grad:
+            numel = p.numel()
+            # Reshape the 1D chunk of delta_theta back to the parameter's shape.
+            # .clone() ensures we don't have overlapping memory issues from the 1D tensor.
+            p.grad = delta_theta[offset:offset + numel].reshape(p.shape).clone()
+            offset += numel
+    
+    if adaptive_lr:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr / (delta_theta.abs().max().item() + 1e-5)
+            print(f"Adaptive learning rate set to: {param_group['lr']:.4e}")
+
+    # 3. Adam reads our injected .grad, updates its internal momentum (mt, vt), 
+    # and safely steps the parameters.
+    optimizer.step()
+    # print current learning rate
+    # for param_group in optimizer.param_groups:
+    #     print(f"Current learning rate: {param_group['lr']:.4e}")
+

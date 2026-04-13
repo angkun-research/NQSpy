@@ -137,15 +137,15 @@ function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
     #return p
 end
 
-N = 21 #31 #50 + 1
+N = 31 #21 #31 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
 t1 = 1.0 #1.0
 t2 = 0.5 # 0.5 #0.5 #-1.0
 U = 10^10 # need to be very large to both prohibit double occupancy and improve convergence
 tJ = true
-J1 = 1.0 #1.0
-J2 = 0.9 #0.5
+J1 = 1.0*0.1 #1.0
+J2 = 0.9*0.1 #0.5
 
 HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ, J1=J1, J2=J2);
 

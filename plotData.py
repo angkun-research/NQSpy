@@ -52,6 +52,7 @@ import pandas as pd
 # t2 = 0.5
 # hidden_dim = 16
 # E_exact = [-2.42988202, -2.519684,-2.541281]
+# Samples = [64*128, 64*64, 64*128]
 # def energy_smooth(Es, window=10):
 # 	smoothed = []
 # 	for i in range(0, len(Es), window):
@@ -60,27 +61,43 @@ import pandas as pd
 
 # #Es_smooth = energy_smooth(Es, window=20)
 # Es_all = []
-# for L in Ls:
-# 	csv_path = f"data/energy_record_L{L}_t2{t2}_hidden{hidden_dim}.csv"
+# Errs = []
+# hidds = [16,16,16]
+# for L, hidden_dim in zip(Ls, hidds):
+# 	# csv_path = f"data/energy_record_L{L}_t2{t2}_hidden{hidden_dim}.csv"
+# 	# Es = pd.read_csv(csv_path)['Energy'].values
+# 	# Es_smooth = energy_smooth(Es, window=20)
+# 	# Es_all.append(Es_smooth)
+# 	csv_path = f"data/energy_error_exact_L{L}_t2{t2}_hidden{hidden_dim}_kernel2.csv"
 # 	Es = pd.read_csv(csv_path)['Energy'].values
-# 	Es_smooth = energy_smooth(Es, window=20)
-# 	Es_all.append(Es_smooth)
-	
-# xs = np.arange(len(Es_all[0])) * 20  
+# 	err = pd.read_csv(csv_path)['Error'].values
+# 	Es_all.append(Es)
+# 	Errs.append(err)
+
+# #xs = np.arange(len(Es_all[0])) * 20 
 # plt.figure(figsize=(6,4))
 # for k in range(len(Ls)):
 # 	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
-# 	line, = plt.plot(xs,Es_all[k], '-o', label=label)
-# 	plt.axhline(E_exact[k], color=line.get_color(), linestyle='--')
+# 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
+# 	inds = np.arange(0, len(Es_all[k]), 2)
+# 	line = plt.errorbar(
+#         inds, #np.arange(len(Es_all[k][inds])),
+#         Es_all[k][inds],
+#         yerr=Errs[k][inds],          # per-point vertical error bars
+#         fmt='-o',              # line + circle markers
+#         capsize=2,             # little cap on bar ends
+#         elinewidth=1,markersize=3,label=label
+#         )
+# 	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
 # plt.xlabel(r'VMC Step')
 # plt.ylabel(r'Energy')
 # plt.legend(loc='best')
-# #plt.xlim(0,700)
-# plt.xlim(0, len(Es_all[0])*20)
+# plt.xlim(0,400)#len(inds))
+# #plt.xlim(0, len(Es_all[0])*20)
 # plt.grid(False)
 # plt.tight_layout()
-# outname = '/Users/angkunwu/Desktop/vmc_exact.png'
-# plt.savefig(outname, dpi=300)
+# # outname = '/Users/angkunwu/Desktop/vmc_exact.png'
+# # plt.savefig(outname, dpi=300)
 # plt.show()
 
 
@@ -129,49 +146,98 @@ import pandas as pd
 
 
 # Final plot system size scaling, J2=0.9,t2=0.5
-Ls = [5,7,9,11,13,15,17,19]
-# cutoff 1e-12
-Chis = [8,19,38,54,75,91,99,107]
-MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
-Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
-        0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
-GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
-             0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
-# cutoff min 1- fidelity 1e-3 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
-FChiddim = [8,13,26,68,190,512]
-FCparams = [249,573,1691,7821,46551,294401]
-FChidL15 = [512,1024]
-FCparamL15 = [294401, 1113089]
-FidL15 = [0.98680770,0.99310958]
-FCparamsL15 = [249,573,1691,7821,46551,1113089]
-# Physical NN
-Kernals = [2,3,3,4,5,7,9]
-Dhidden = [4,4,6,8,8,12,16]
-Physicalparams = [81,105,181,305,353,697,1153]
-PhysicalFids = [0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+# Ls = [5,7,9,11,13,15,17,19]
+# # cutoff 1e-12
+# Chis = [8,19,38,54,75,91,99,107]
+# MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
+# Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
+#         0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
+# GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
+#              0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
+# # cutoff min 1- fidelity 1e-3 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
+# FChiddim = [8,13,26,68,190,512]
+# FCparams = [249,573,1691,7821,46551,294401]
+# FChidL15 = [512,1024]
+# FCparamL15 = [294401, 1113089]
+# FidL15 = [0.98680770,0.99310958]
+# FCparamsL15 = [249,573,1691,7821,46551,1113089]
+# # Physical NN
+# Kernals = [2,3,3,4,5,7,9]
+# Dhidden = [4,4,6,8,8,12,16]
+# Physicalparams = [81,105,181,305,353,697,1153]
+# PhysicalFids = [0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
 
-if __name__ == "__main__":
-    fig, ax1 = plt.subplots(figsize=(6,4))
+# if __name__ == "__main__":
+#     fig, ax1 = plt.subplots(figsize=(6,4))
 
-    # left axis: 1 - Fidelity (log scale)
-    ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '-o', label=r'VBS NN')
-    ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
-    ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
-    ax1.plot(Ls[:len(MPSparams)], MPSparams, '-^', label=r'MPS')
-    ax1.set_xlabel(r'$L$')
-    ax1.set_ylabel(r'Number of parameters')
-    ax1.set_yscale('log')
-    ax1.grid(False)
-    ax1.legend(loc='upper right')
-    # right axis: gap size scaling
-    ax2 = ax1.twinx()
-     # black color
-    ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
-    ax2.set_ylabel(r'many-body gap $\Delta$')
-    ax2.legend(loc='lower center')
-    ax2.set_yscale('log')
-    #ax2.set_ylim(0, 160)  
-    plt.tight_layout()
-    # outname = '/Users/angkunwu/Desktop/scalingLs.png'
-    # plt.savefig(outname, dpi=300)
-    plt.show()
+#     # left axis: 1 - Fidelity (log scale)
+#     ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '-o', label=r'VBS NN')
+#     ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
+#     ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
+#     ax1.plot(Ls[:len(MPSparams)], MPSparams, '-^', label=r'MPS')
+#     ax1.set_xlabel(r'$L$')
+#     ax1.set_ylabel(r'Number of parameters')
+#     ax1.set_yscale('log')
+#     ax1.grid(False)
+#     ax1.legend(loc='upper right')
+#     # right axis: gap size scaling
+#     ax2 = ax1.twinx()
+#      # black color
+#     ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
+#     ax2.set_ylabel(r'many-body gap $\Delta$')
+#     ax2.legend(loc='lower center')
+#     ax2.set_yscale('log')
+#     #ax2.set_ylim(0, 160)  
+#     plt.tight_layout()
+#     # outname = '/Users/angkunwu/Desktop/scalingLs.png'
+#     # plt.savefig(outname, dpi=300)
+#     plt.show()
+
+
+
+
+
+Ls = [11,21,31] #[11,15,21] 
+DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
+t2 = 0.5
+E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
+Samples = [64*128, 128*128, 128*128] # 64*128
+J1 = 0.1
+J2 = 0.09
+
+Es_all = []
+Errs = []
+hidds = [32,32,32]
+for L, hidden_dim in zip(Ls, hidds):
+	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
+	Es = pd.read_csv(csv_path)['Energy'].values
+	err = pd.read_csv(csv_path)['Error'].values
+	Es_all.append(Es)
+	Errs.append(err)
+
+#xs = np.arange(len(Es_all[0])) * 20 
+plt.figure(figsize=(6,4))
+for k in range(len(Ls)):
+	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
+	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
+	inds = np.arange(0, len(Es_all[k]), 1)
+	line = plt.errorbar(
+        inds, #np.arange(len(Es_all[k][inds])),
+        Es_all[k][inds],
+        yerr=Errs[k][inds],          # per-point vertical error bars
+        fmt='-o',              # line + circle markers
+        capsize=2,             # little cap on bar ends
+        elinewidth=1,markersize=3,label=label
+        )
+	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
+plt.xlabel(r'VMC Step')
+plt.ylabel(r'Energy')
+plt.legend(loc='best')
+plt.title(r'$J_1=0.1,\ J_2=0.09$')
+plt.xlim(0,200)
+#plt.xlim(0, len(Es_all[0])*20)
+plt.grid(False)
+plt.tight_layout()
+# outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
+# plt.savefig(outname, dpi=300)
+plt.show()
