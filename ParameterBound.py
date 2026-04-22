@@ -11,11 +11,11 @@ from utils import total_squared_loss
 from vmc_utils import build_MB_basis,build_Hamiltonian_adjlist,adjlist_to_csr
 
 L = 13
-t1 = 0.0 #1.0
-t2 = 0.0 #0.5
+t1 = 1.0 #0.0 #1.0
+t2 = 0.5 #0.0 #0.5
 nhole = 1 # 2
 J1 = 1.0
-J2 = 0.9
+J2 = 0.0 #0.9
 print(f"J2: {J2}")
 
 basis = build_MB_basis_holes(L,nholes=nhole)
@@ -27,7 +27,10 @@ Hsparse = adjlist_to_csr(H_ind, H_val)
 e_vals, e_vecs = eigsh(Hsparse, k=3, which='SA')
 print(f"Ground state energy with  {nhole} holes in L={L}: {e_vals[:10]}")
 print(f"Gap to first excited state: {e_vals[1] - e_vals[0]}")
-exit(0)
+# evaluate the ground state
+# e0 = e_vecs[:,0].conj() @ Hsparse.dot(e_vecs[:,0])
+# print(f"Ground state energy (from expectation value): {e0}")
+# exit(0)
 
 configs = basis_to_spinconfig_holes(basis, L)
 onehot_configs = basis_to_onehot(configs, L)
@@ -38,8 +41,8 @@ X = torch.tensor(onehot_configs, dtype=torch.float32)
 y = torch.tensor(e_vecs[:, 0], dtype=torch.float32)
 y = y / torch.norm(y)
 
-hidden_dim = 12 #580 #1024
-kernel_size = 8
+hidden_dim = 16 #8 #580 #1024
+kernel_size = 2 #8
 print("hidden_dim:", hidden_dim, "kernel_size:", kernel_size)
 
 criterion = total_squared_loss
@@ -80,17 +83,22 @@ def train_once(seed: int, epochs: int = 2000, lr: float = 1e-3, log_every: int =
 
         # Fidelity = |<psi_true | psi_pred>|
         fidelity = torch.abs(torch.dot(predicted_coeffs, y)).item()
+        # energy = <psi_pred | H | psi_pred>
+        pred = predicted_coeffs.detach().cpu().numpy()
+        energy = float(pred.conj() @ Hsparse.dot(pred))
+        print(f"Predicted ground state energy: {energy}")
 
         # (optional) squared error after normalization (for reference)
         normed_mse = torch.sum((predicted_coeffs - y) ** 2).item()
 
-    return fidelity, normed_mse
+    return fidelity, energy.item(), normed_mse
 
 # ===== 10 independent runs =====
-num_runs = 0#10 # 10
-base_seed = 1234
+num_runs = 1 #10 # 10
+base_seed = 1234 # random seed #1234 
 
 fidelities = []
+energies = []
 mses = []
 
 # Parameter count (same each run for same architecture)
@@ -102,12 +110,20 @@ print(f"Total trainable parameters: {total_params}")
 
 for i in range(num_runs):
     seed = base_seed + i
-    fidelity, normed_mse = train_once(seed=seed, epochs=2000, lr=1e-3, log_every=100)
+    fidelity, energy, normed_mse = train_once(seed=seed, epochs=2000, lr=1e-3, log_every=100)
     fidelities.append(fidelity)
+    energies.append(energy)
     mses.append(normed_mse)
-    print(f"[run {i+1:02d}/{num_runs}] seed={seed} fidelity={fidelity:.8f} normed_mse={normed_mse:.8e}")
+    print(f"[run {i+1:02d}/{num_runs}] seed={seed} fidelity={fidelity:.8f} energy={energy:.8f} normed_mse={normed_mse:.8e}")
 
 fidelities = np.array(fidelities, dtype=np.float64)
+energies = np.array(energies, dtype=np.float64)
+mses = np.array(mses, dtype=np.float64)
+
 print("\n=== Summary over 10 runs ===")
 print(f"Fidelity mean = {fidelities.mean():.8f}")
-print(f"Fidelity std  = {fidelities.std(ddof=1):.8f}")
+#print(f"Fidelity std  = {fidelities.std(ddof=1):.8f}")
+print(f"Energy mean   = {energies.mean():.8f}")
+#print(f"Energy std    = {energies.std(ddof=1):.8f}")
+print(f"MSE mean      = {mses.mean():.8e}")
+#print(f"MSE std       = {mses.std(ddof=1):.8e}")

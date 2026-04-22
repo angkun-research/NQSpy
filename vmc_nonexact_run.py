@@ -12,6 +12,7 @@ from vmc_utils import BalancedSampler
 from vmc_utils import TightBinding_coeff, find_state_coeff
 from vmc_utils import generate_initial_state
 from vmc_utils import VBSNN, sr_update, Obtain_Sampling_batch, sr_update_optimizer
+from vmc_utils import cleanup_memory
 import random
 from tqdm import trange 
 import numpy.linalg as la
@@ -19,7 +20,7 @@ import numpy.linalg as la
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
-L = 31 #11
+L = 11 #11
 t1 = 1.0
 t2 = 0.5
 J1 = 0.1 #1.0
@@ -37,7 +38,7 @@ J2 = 0.09 #0.9 #0.81/100
 # print("Dimension of Hilbert space:", len(basis))
 # exit()
 
-E_exact = -3.66565952 # eigvals[0] # Ls = [11,21,31] E_exact = [-6.156705, -10.009270,-13.79471558]
+E_exact = -2.80219475 # eigvals[0] # Ls = [11,21,31] E_exact = [-6.156705, -10.009270,-13.79471558]
 # [-2.80219475,-3.26788669,-3.66565952]
 print(f"Exact ground state energy for L={L}: {E_exact}")
 
@@ -54,15 +55,15 @@ print(f"Number of parameters in the neural network: {n_params}")
 # start VMC 
 # Initialize state
 #initial_state = generate_initial_state(L) #random.choice(basis)
-n_walkers = 128 #32 #64 
+n_walkers = 64 #32 #64 
 initial_states = [generate_initial_state(L) for _ in range(n_walkers)]  
 
 #optimizer = optim.Adam(psi.parameters(), lr=1e-2) # 1e-2 3e-3
 optimizer = optim.SGD(psi.parameters(), lr=1e-2)
 
-n_samples = 256 #128 #64  
+n_samples = 64 #128 #64  
 print("n_walkers:", n_walkers, "n_samples:", n_samples)
-epochs = 500 
+epochs = 200
 N_eff = n_samples * n_walkers / 10  # effective sample size, adjusted for autocorrelation (heuristic factor of 10)
 burn_in = 64 #1000
 Sampler = BalancedSampler if J2 == J1 else GlobalSampler
@@ -118,6 +119,11 @@ for step in trange(epochs, desc="VMC Sampling"):
         sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, sr_tau, device)
     # if E_mean.item() < E_exact+0.01:
     #     break 
+    # free Python containers / references you no longer need
+    sampled_states.clear()           # list of many tuples
+    psis, psis_tensor = None, None                      # if you stored another copy
+    energies, E_tensor = None, None
+    cleanup_memory(free_vars=None, optimizer=optimizer)
 
 print(f"Step {step}: <E> = {E_mean.item():.6f} ± {E_se.item():.6f}")
 
@@ -137,12 +143,14 @@ for k in range(10):
     print(f"Final evaluation {k}: <E> = {E_mean.item():.6f} ± {E_se.item():.6f}")
     energy_record.append(E_mean.item())
     error_record.append(E_se.item())
+    # free Python containers / references you no longer need
+    energies, E_tensor = None, None
 
 # output energy_record to csv
 import pandas as pd
 totalsam = n_walkers* n_samples
 totalsam = int(totalsam)
 df = pd.DataFrame({'Energy': energy_record, 'Error': error_record})
-csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_sam{totalsam}.csv"
+csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_sam{totalsam}_epoch{epochs}.csv"
 df.to_csv(csv_path, index=False)
 print(f"Saved energy and error record to {csv_path}")

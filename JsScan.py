@@ -15,7 +15,7 @@ from utils import total_squared_loss
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print("Using device:", device)
 
-def obtain_fidelity(L, J1, J2, t1=1.0, t2=0.5, device=device):
+def obtain_fidelity(L, J1, J2, t1=1.0, t2=0.5, kernel_size=2, hidden_dim=16, device=device):
     basis = build_MB_basis(L)
     basis_dict = {state: idx for idx, state in enumerate(basis)}
     H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
@@ -29,8 +29,8 @@ def obtain_fidelity(L, J1, J2, t1=1.0, t2=0.5, device=device):
     #psi = PhysicalNN(L, hidden_dim=32, kernel_size=2, holewave=True).to(device)
     # strides = (1,2,3)#(2,)
     # psi = LdepConvStrides(L, nhole=1, hidden_dim=32,kernel_size=3, strides=strides)
-    hidden_dim = 64 #16 #32
-    kernel_size = 5 #2 #16
+    #hidden_dim = 16#64 #16 #32
+    #kernel_size = 2 #5  #2 #16 
     psi = LdepConvPlusFC(L, Conv_dim=hidden_dim,kernel_size=kernel_size)
 
     # Supervised pre training based on the exact ground state
@@ -59,8 +59,11 @@ def obtain_fidelity(L, J1, J2, t1=1.0, t2=0.5, device=device):
         predicted_coeffs = predicted_coeffs / torch.norm(predicted_coeffs)
         fidelity = torch.sum(predicted_coeffs * y_tensor).item()
         print("fidelity:", fidelity)
+        pred = predicted_coeffs.detach().cpu().numpy()
+        energy = float(pred.conj() @ H_csr.dot(pred))
+        print(f"Predicted ground state energy: {energy}")
 
-    return lossFinal,fidelity
+    return lossFinal,fidelity,energy
 
 
 # L = 7
@@ -120,15 +123,23 @@ def obtain_fidelity(L, J1, J2, t1=1.0, t2=0.5, device=device):
 # #plt.savefig(f"loss_heatmap_L{L}_t1{t1}_t2{t2}.png")
 # plt.show()
 
-print("kernel size is 5, hidden dim is 64")
 L = 13
 J2s = np.arange(0.0, 2.1, 0.1)
+hidden_dim = 64 #16
+kernel_size = 5 #2
+print(f"kernel size is {kernel_size}, hidden dim is {hidden_dim}")
 
 losses = np.zeros(len(J2s))
 fidelities = np.zeros(len(J2s))
+energies = np.zeros(len(J2s))
 
-for i,J2 in enumerate(J2s):
-    lossFinal,fidelity = obtain_fidelity(L, J1=1.0, J2=J2, device=device)
-    losses[i] = lossFinal
-    fidelities[i] = fidelity
-    print(f"J2={J2:.1f}, Loss={lossFinal:.4f}, Fidelity={fidelity:.8f}")
+# for i,J2 in enumerate(J2s):
+#     lossFinal,fidelity,energy = obtain_fidelity(L, J1=1.0, J2=J2,kernel_size=kernel_size, hidden_dim=hidden_dim, device=device)
+#     losses[i] = lossFinal
+#     fidelities[i] = fidelity
+#     energies[i] = energy
+#     print(f"J2={J2:.1f}, Loss={lossFinal:.4f}, Fidelity={fidelity:.8f}, Energy={energy:.8f}")
+
+J2 = J2s[2]
+lossFinal,fidelity,energy = obtain_fidelity(L, J1=1.0, J2=J2,kernel_size=kernel_size, hidden_dim=hidden_dim, device=device)
+print(f"J2={J2:.1f}, Loss={lossFinal:.4f}, Fidelity={fidelity:.8f}, Energy={energy:.8f}")
