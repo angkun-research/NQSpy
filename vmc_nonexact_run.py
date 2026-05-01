@@ -20,31 +20,31 @@ import numpy.linalg as la
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
-L = 11 #11
+L = 15 #11
 t1 = 1.0
 t2 = 0.5
-J1 = 0.1 #1.0
-J2 = 0.09 #0.9 #0.81/100
-# basis = build_MB_basis(L)
+J1 = 1.0 #0.1 #1.0
+J2 = 0.9 #0.09 #0.9 #0.81/100
+basis = build_MB_basis(L)
 # basis_dict = {state: idx for idx, state in enumerate(basis)}
 # #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
 # #Hsparse = csr_matrix(H)
-# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-# Hsparse = adjlist_to_csr(H_ind, H_val)
-# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# # eigvals, eigvecs = la.eigh(H)
-# print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
-# exact_gs = eigvecs[:, 0]
-# print("Dimension of Hilbert space:", len(basis))
-# exit()
+H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+Hsparse = adjlist_to_csr(H_ind, H_val)
+eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# eigvals, eigvecs = la.eigh(H)
+print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
+exact_gs = eigvecs[:, 0]
+print("Dimension of Hilbert space:", len(basis))
+#exit()
 
-E_exact = -2.80219475 # eigvals[0] # Ls = [11,21,31] E_exact = [-6.156705, -10.009270,-13.79471558]
+E_exact = eigvals[0] # Ls = [11,21,31] E_exact = [-6.156705, -10.009270,-13.79471558]
 # [-2.80219475,-3.26788669,-3.66565952]
 print(f"Exact ground state energy for L={L}: {E_exact}")
 
 # h 128, k 5 for L=7;
-hidden_dim = 32 #64 #16 
-kernel_size = 5 
+hidden_dim = 22 #64 #16 
+kernel_size = 5  
 print("hidden_dim:", hidden_dim, "kernel_size:", kernel_size)
 psi = VBSNN(L, Conv_dim=hidden_dim,kernel_size=kernel_size)
 psi.to(device)
@@ -147,10 +147,22 @@ for k in range(10):
     energies, E_tensor = None, None
 
 # output energy_record to csv
-import pandas as pd
-totalsam = n_walkers* n_samples
-totalsam = int(totalsam)
-df = pd.DataFrame({'Energy': energy_record, 'Error': error_record})
-csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_sam{totalsam}_epoch{epochs}.csv"
-df.to_csv(csv_path, index=False)
-print(f"Saved energy and error record to {csv_path}")
+# import pandas as pd
+# totalsam = n_walkers* n_samples
+# totalsam = int(totalsam)
+# df = pd.DataFrame({'Energy': energy_record, 'Error': error_record})
+# csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_sam{totalsam}_epoch{epochs}.csv"
+# df.to_csv(csv_path, index=False)
+# print(f"Saved energy and error record to {csv_path}")
+
+# check final fidelity
+X = np.stack([state_to_onehot(state, L) for state in basis])
+X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
+with torch.no_grad():
+    predicted_coeffs = psi(X_tensor).squeeze()
+    print("norm of predicted coeffs:", torch.norm(predicted_coeffs).item())
+    # compute fidelity: ensure both normalized
+    pred_norm = predicted_coeffs / torch.norm(predicted_coeffs)
+    exact_gs_tensor = torch.tensor(exact_gs, dtype=torch.float32, device=device)
+    print("Final fidelity:", torch.sum(pred_norm * exact_gs_tensor).item())
+

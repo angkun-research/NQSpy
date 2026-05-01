@@ -2,6 +2,38 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+# Only spin results (no hopping)
+# Ls = [12,14,16,18,20]
+# # hid=16, kernel=2, train on 2,4,6,8,10
+# Fids = [0.9999885559082031,0.9998733997344971,0.9992972612380981,0.9971129894256592,0.9914627075195312]
+# FidsTrain = [0.99999964,0.99999958,0.99999952,0.99999726]
+# # J2=0.0, hid=64, kernel=5
+# FidsJ20 = [0.9179648756980896,0.7908716201782227,0.7399603128433228,0.6359143257141113,0.596321702003479]
+# FidsJ20Train = [0.99956441,0.99786794,0.99332392,0.98385531]
+# # J2=1.5 hid=64, kernel=5
+# FidsJ215 = [0.6066146492958069,0.503864586353302,0.33894866704940796,0.2450920045375824,0.1748594343662262]
+# FidsJ215Train = [0.99183154,0.98012489,0.96675253,0.94783098]
+
+# if __name__ == "__main__":
+#     fig, ax = plt.subplots(figsize=(6,4))
+#     line = ax.plot(Ls, np.array(Fids), '-o', label=r'$J_2=1.0$',markersize=4)
+#     ax.plot(Ls[:len(FidsTrain)], np.array(FidsTrain), '--o', label=None, color=line[0].get_color(),markerfacecolor='none')
+#     line = ax.plot(Ls, np.array(FidsJ20), '-s', label=r'$J_2=0.0$',markersize=4)
+#     ax.plot(Ls[:len(FidsJ20Train)], np.array(FidsJ20Train), '--s', label=None, color=line[0].get_color(),markerfacecolor='none')
+#     line = ax.plot(Ls, np.array(FidsJ215), '-^', label=r'$J_2=1.5$',markersize=4)
+#     ax.plot(Ls[:len(FidsJ215Train)], np.array(FidsJ215Train), '--^', label=None, color=line[0].get_color(),markerfacecolor='none')
+#     ax.set_xlabel(r'$L$')
+#     ax.set_ylabel(r'$|\langle \Psi_{\mathrm{ed}}|\Psi_{\mathrm{test}}\rangle|$')
+#     #ax.set_yscale('log')
+#     ax.grid(False)
+#     ax.legend(loc='lower left')
+#     plt.tight_layout()
+#     outname = '/Users/angkunwu/Desktop/extrapolateLs.png'
+#     plt.savefig(outname, dpi=300)
+#     plt.show()
+
+
+
 # # J2s from 0.5 to 1.5 with step 0.1
 # J2s = np.arange(0.5, 1.6, 0.1)
 # Fids0 = [0.951,0.962,0.975,0.989,0.997,0.999982,0.991,0.979,0.935,0.911,0.861]
@@ -219,7 +251,7 @@ import pandas as pd
 # 	plt.show()
 
 
-# Final plot system size scaling, J2=0.9,t2=0.5
+# Final plot system size scaling, t2=0.5, J2=0.9
 # Ls = [5,7,9,11,13,15,17,19]
 # # cutoff 1e-12
 # Chis = [8,19,38,54,75,91,99,107]
@@ -228,24 +260,36 @@ import pandas as pd
 #         0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
 # GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
 #              0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
-# # cutoff min 1- fidelity 1e-3 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
+# # cutoff min 1- fidelity 1e-2 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
 # FChiddim = [8,13,26,68,190,512]
 # FCparams = [249,573,1691,7821,46551,1113089] #294401]
 # FChidL15 = [512,1024]
 # FCparamL15 = [294401, 1113089]
 # FidL15 = [0.98680770,0.99310958]
 # FCparamsL15 = [249,573,1691,7821,46551,1113089]
-# # Physical NN
+# # Physical NN fidelity threshold 1e-3 
 # Kernals = [2,3,3,4,5,7,9]
 # Dhidden = [4,4,6,8,8,12,16]
 # Physicalparams = [81,105,181,305,353,697,1153]
 # PhysicalFids = [0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+# # Physical NN fidelity threshold 1e-2
+# # Kernals = [2,2,2,2]
+# # Dhidden = [2,2,2,4]
+# # Physicalparams = [37,41,45,105]
+# # PhysicalFids = [0.99992979,0.99958485,0.99851441,0.99759948]
+# # Physical NN relative energy error 1e-3
+# Kernals2 = [2,3,4,4,5,5]
+# Dhidden2 = [14,16,18,20,20,22]
+# Physicalparams2 = [421,609,829,1001,1121,1321]
+# PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
+# PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
 
 # if __name__ == "__main__":
 #     fig, ax1 = plt.subplots(figsize=(6,4))
 
 #     # left axis: 1 - Fidelity (log scale)
-#     ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '-o', label=r'VBS NN')
+#     line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
+#     ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
 #     ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
 #     #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
 #     ax1.plot(Ls[:len(MPSparams)], MPSparams, '-^', label=r'MPS')
@@ -271,50 +315,50 @@ import pandas as pd
 
 
 
-Ls = [11,21,31] #[11,15,21] 
-DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
-t2 = 0.5
-E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
-Samples = [64*128, 128*128, 128*128] # 64*128
-J1 = 0.1
-J2 = 0.09
+# Ls = [11,21,31] #[11,15,21] 
+# DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
+# t2 = 0.5
+# E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
+# Samples = [64*128, 128*128, 128*128] # 64*128
+# J1 = 0.1
+# J2 = 0.09
 
-Es_all = []
-Errs = []
-hidds = [32,32,32]
-for L, hidden_dim in zip(Ls, hidds):
-	#if L != 31:
-	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
-	#else:
-		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
-	Es = pd.read_csv(csv_path)['Energy'].values
-	err = pd.read_csv(csv_path)['Error'].values
-	Es_all.append(Es)
-	Errs.append(err)
+# Es_all = []
+# Errs = []
+# hidds = [32,32,32]
+# for L, hidden_dim in zip(Ls, hidds):
+# 	#if L != 31:
+# 	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
+# 	#else:
+# 		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
+# 	Es = pd.read_csv(csv_path)['Energy'].values
+# 	err = pd.read_csv(csv_path)['Error'].values
+# 	Es_all.append(Es)
+# 	Errs.append(err)
 
-#xs = np.arange(len(Es_all[0])) * 20 
-plt.figure(figsize=(6,4))
-for k in range(len(Ls)):
-	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
-	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
-	inds = np.arange(0, len(Es_all[k]), 1)
-	line = plt.errorbar(
-        inds, #np.arange(len(Es_all[k][inds])),
-        Es_all[k][inds],
-        yerr=Errs[k][inds],          # per-point vertical error bars
-        fmt='-o',              # line + circle markers
-        capsize=2,             # little cap on bar ends
-        elinewidth=1,markersize=3,label=label
-        )
-	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
-plt.xlabel(r'VMC Step')
-plt.ylabel(r'Energy')
-plt.legend(loc='best')
-plt.title(r'$J_1=0.1,\ J_2=0.09$')
-plt.xlim(0,200)
-#plt.xlim(0, len(Es_all[0])*20)
-plt.grid(False)
-plt.tight_layout()
-outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
-plt.savefig(outname, dpi=300)
-plt.show()
+# #xs = np.arange(len(Es_all[0])) * 20 
+# plt.figure(figsize=(6,4))
+# for k in range(len(Ls)):
+# 	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
+# 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
+# 	inds = np.arange(0, len(Es_all[k]), 1)
+# 	line = plt.errorbar(
+#         inds, #np.arange(len(Es_all[k][inds])),
+#         Es_all[k][inds],
+#         yerr=Errs[k][inds],          # per-point vertical error bars
+#         fmt='-o',              # line + circle markers
+#         capsize=2,             # little cap on bar ends
+#         elinewidth=1,markersize=3,label=label
+#         )
+# 	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
+# plt.xlabel(r'VMC Step')
+# plt.ylabel(r'Energy')
+# plt.legend(loc='best')
+# plt.title(r'$J_1=0.1,\ J_2=0.09$')
+# plt.xlim(0,200)
+# #plt.xlim(0, len(Es_all[0])*20)
+# plt.grid(False)
+# plt.tight_layout()
+# outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
+# plt.savefig(outname, dpi=300)
+# plt.show()

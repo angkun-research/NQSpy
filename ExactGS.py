@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.linalg as la
 import itertools
+from numbers import Integral
 
 import torch
 
@@ -32,13 +33,18 @@ def build_MB_basis_holes(L, nholes=1, Nup=None):
     Returns:
         list of tuples: basis states as (holes_tuple, up_sites_tuple)
     """
-    assert isinstance(L, int) and L > 0
-    assert isinstance(nholes, int) and 0 <= nholes < L
+    assert isinstance(L, Integral) and L > 0
+    assert isinstance(nholes, Integral) and 0 <= nholes < L
+
+    L = int(L)
+    nholes = int(nholes)
 
     sites = list(range(L))
     Nev = L - nholes  # number of electrons
     if Nup is None:
         Nup = Nev // 2  # "around half" up spins by default
+    elif isinstance(Nup, Integral):
+        Nup = int(Nup)
     assert 0 <= Nup <= Nev, "Nup must be between 0 and number of electrons"
 
     basis = []
@@ -276,3 +282,163 @@ def basis_to_spinconfig_holes(basis, L):
             config[idx] = 2  # 2 for up spin, 1 for down spin
         configs.append(config)
     return np.array(configs)
+
+
+
+def build_Hamiltonian_holes_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0,pbc=False):
+    """
+    Build Hamiltonian as adjacency lists for a basis with an arbitrary number of holes.
+
+    Each basis state is (holes_tuple, up_sites_tuple). Holes are empty sites.
+    Returns:
+      neighbors_idx: list of 1D np.int32 arrays
+      neighbors_val: list of 1D np.float64 arrays
+    """
+    basis_dict = {state: idx for idx, state in enumerate(basis)}
+    nbasis = len(basis)
+    neighbors = [[] for _ in range(nbasis)]
+
+    for idx, state in enumerate(basis):
+        holes, up_sites = state
+
+        # Normalize types for compatibility with older single-hole style states.
+        if not isinstance(holes, tuple):
+            holes = (holes,)
+        if not isinstance(up_sites, tuple):
+            up_sites = (up_sites,)
+
+        # NN hopping
+        for hole in holes:
+            for delta in (-1, 1):
+                if pbc:
+                    neighbor = (hole + delta) % L
+                else:
+                    neighbor = hole + delta
+                    if neighbor < 0 or neighbor >= L:
+                        continue
+
+                new_holes = tuple(sorted([h for h in holes if h != hole] + [neighbor]))
+
+                if neighbor in up_sites:
+                    new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                else:
+                    new_up_sites = up_sites
+
+                new_state = (new_holes, new_up_sites)
+                try:
+                    j = basis_dict[new_state]
+                    neighbors[idx].append((j, -t1))
+                except KeyError:
+                    continue
+
+        # NN spin exchange
+        if J1 != 0.0:
+            nn_sites = range(L) if pbc else range(L - 1)
+            for site in nn_sites:   #range(L - 1):
+                # if site in holes or (site + 1) in holes:
+                #     continue
+                jsite = (site + 1) % L if pbc else site + 1
+                if site in holes or jsite in holes:
+                    continue
+
+                spin_i = 1 if site in up_sites else -1
+                spin_j = 1 if jsite in up_sites else -1
+
+                diag_coeff = (J1 / 4.0) * spin_i * spin_j
+                neighbors[idx].append((idx, diag_coeff))
+
+                if spin_i != spin_j:
+                    if spin_i == 1:
+                        flipped_up_sites = tuple(
+                            sorted([s if s != site else jsite for s in up_sites])
+                        )
+                    else:
+                        flipped_up_sites = tuple(
+                            sorted([s if s != jsite else site for s in up_sites])
+                        )
+
+                    flipped_state = (holes, flipped_up_sites)
+                    try:
+                        j = basis_dict[flipped_state]
+                        neighbors[idx].append((j, J1 / 2.0))
+                    except KeyError:
+                        pass
+
+        # NNN hopping
+        for hole in holes:
+            if hole % 2 != 0:
+                continue
+
+            other_holes = [h for h in holes if h != hole]
+
+            for delta in (-2, 2):
+                # neighbor = hole + delta
+                # if neighbor < 0 or neighbor >= L:
+                #     continue
+                if pbc:
+                    neighbor = (hole + delta) % L
+                    middle_site = (hole + delta // 2) % L
+                else:
+                    neighbor = hole + delta
+                    if neighbor < 0 or neighbor >= L:
+                        continue
+                    middle_site = (hole + neighbor) // 2
+
+                if neighbor in holes:
+                    continue
+
+                new_holes = tuple(sorted([h for h in holes if h != hole] + [neighbor]))
+
+                if neighbor in up_sites:
+                    new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
+                else:
+                    new_up_sites = up_sites
+
+                # middle_site = (hole + neighbor) // 2
+                # if middle_site in other_holes:
+                #     sign_factor = 1
+                # else:
+                #     sign_factor = -1
+                sign_factor = 1 if middle_site in other_holes else -1
+
+                new_state = (new_holes, new_up_sites)
+                try:
+                    j = basis_dict[new_state]
+                    neighbors[idx].append((j, -t2 * sign_factor))
+                except KeyError:
+                    continue
+
+        # NNN spin exchange
+        if J2 != 0.0:
+            nnn_sites = range(0, L, 2) if pbc else range(0, L - 2, 2)
+            for site in nnn_sites:   #range(0, L - 2, 2):
+                jsite = (site + 2) % L if pbc else site + 2
+                if site in holes or jsite in holes:
+                    continue
+                
+                spin_i = 1 if site in up_sites else -1
+                spin_j = 1 if jsite in up_sites else -1
+
+                diag_coeff = (J2 / 4.0) * spin_i * spin_j
+                neighbors[idx].append((idx, diag_coeff))
+
+                if spin_i != spin_j:
+                    if spin_i == 1:
+                        flipped_up_sites = tuple(
+                            sorted([s if s != site else jsite for s in up_sites])
+                        )
+                    else:
+                        flipped_up_sites = tuple(
+                            sorted([s if s != jsite else site for s in up_sites])
+                        )
+
+                    flipped_state = (holes, flipped_up_sites)
+                    try:
+                        j = basis_dict[flipped_state]
+                        neighbors[idx].append((j, J2 / 2.0))
+                    except KeyError:
+                        pass
+
+    neighbors_idx = [np.array([p[0] for p in row], dtype=np.int32) for row in neighbors]
+    neighbors_val = [np.array([p[1] for p in row], dtype=np.float64) for row in neighbors]
+    return neighbors_idx, neighbors_val

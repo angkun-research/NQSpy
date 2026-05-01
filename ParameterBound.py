@@ -10,12 +10,12 @@ from NeuralNetworks import LdepConvHoles,FCNet, LdepConvStrides,LdepConvPlusFC
 from utils import total_squared_loss
 from vmc_utils import build_MB_basis,build_Hamiltonian_adjlist,adjlist_to_csr
 
-L = 13
+L = 15
 t1 = 1.0 #0.0 #1.0
 t2 = 0.5 #0.0 #0.5
 nhole = 1 # 2
 J1 = 1.0
-J2 = 0.0 #0.9
+J2 = 0.9
 print(f"J2: {J2}")
 
 basis = build_MB_basis_holes(L,nholes=nhole)
@@ -41,8 +41,8 @@ X = torch.tensor(onehot_configs, dtype=torch.float32)
 y = torch.tensor(e_vecs[:, 0], dtype=torch.float32)
 y = y / torch.norm(y)
 
-hidden_dim = 16 #8 #580 #1024
-kernel_size = 2 #8
+hidden_dim = 12 #8 #580 #1024
+kernel_size = 5 #8
 print("hidden_dim:", hidden_dim, "kernel_size:", kernel_size)
 
 criterion = total_squared_loss
@@ -91,10 +91,10 @@ def train_once(seed: int, epochs: int = 2000, lr: float = 1e-3, log_every: int =
         # (optional) squared error after normalization (for reference)
         normed_mse = torch.sum((predicted_coeffs - y) ** 2).item()
 
-    return fidelity, energy.item(), normed_mse
+    return fidelity, energy, normed_mse
 
 # ===== 10 independent runs =====
-num_runs = 1 #10 # 10
+num_runs = 10 # 10
 base_seed = 1234 # random seed #1234 
 
 fidelities = []
@@ -122,8 +122,12 @@ mses = np.array(mses, dtype=np.float64)
 
 print("\n=== Summary over 10 runs ===")
 print(f"Fidelity mean = {fidelities.mean():.8f}")
+print(f"Fidelity max  = {fidelities.max():.8f}")
+print(f"Fidelity min  = {fidelities.min():.8f}")
 #print(f"Fidelity std  = {fidelities.std(ddof=1):.8f}")
 print(f"Energy mean   = {energies.mean():.8f}")
 #print(f"Energy std    = {energies.std(ddof=1):.8f}")
 print(f"MSE mean      = {mses.mean():.8e}")
 #print(f"MSE std       = {mses.std(ddof=1):.8e}")
+
+print(f"hidden_dim: {hidden_dim}, kernel_size: {kernel_size}, total_params: {total_params}")
