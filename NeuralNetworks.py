@@ -56,8 +56,8 @@ class ConvNet(nn.Module):
         self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad)
         self.layer2 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
         self.layer3 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
-        self.layer4 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
-        self.layer5 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
+        # self.layer4 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
+        # self.layer5 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size, padding=self.pad)
         #self.layer2 = nn.Linear(hidden_dim, hidden_dim)
         # layers = []
         # dilation = 1
@@ -82,8 +82,8 @@ class ConvNet(nn.Module):
         x = torch.relu(self.layer1(x))
         x = torch.relu(self.layer2(x)+x)  # Residual connection
         x = torch.relu(self.layer3(x)+x)  # Residual connection
-        x = torch.relu(self.layer4(x))  # Residual connection
-        x = torch.relu(self.layer5(x))  # Residual connection
+        # x = torch.relu(self.layer4(x))  # Residual connection
+        # x = torch.relu(self.layer5(x))  # Residual connection
         #x = torch.relu(self.layer2(x))  # Residual connection
         # for conv in self.convs:
         #     residual = x
@@ -128,16 +128,14 @@ class ConvSkipHole(nn.Module):
         batch_size, L, C = x.shape
         device = x.device
         # assume exactly one hole per sample encoded as channel 0 == 1
-        # get hole indices (shape: (B,))
-        hole_idx = torch.argmax(x[:, :, 0], dim=1)
-        # # build mask: True for positions that are NOT the hole
-        # idx = torch.arange(L, device=device)
-        # mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
-        mask = x[:, :, 0] == 0  # True for non-hole positions
-        # select non-hole positions and reshape -> (B, L-1, C)
-        x_nohole = x[mask].view(batch_size, L - self.nholes, C)
-        # x shape: (batch, L, 4) -> (batch, 4, L)
-        x = x_nohole.permute(0, 2, 1)
+        hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        hole_pos = torch.argmax(hole_mask, dim=1)  # (B,) — fixed shape, vmap-safe 
+        # Build indices [0,1,...,hole-1, hole+1,...,L-1] per sample
+        idx = torch.arange(L - self.nholes, device=device).unsqueeze(0).expand(batch_size, -1)  # (B, L-nhole)
+        idx = idx + (idx >= hole_pos.unsqueeze(1)).long()  # shift indices past the hole
+        x_nohole = torch.gather(x, 1, idx.unsqueeze(-1).expand(-1, -1, C))  # (B, L-nhole, C)
+        x = x_nohole.permute(0, 2, 1)  # (B, C, L-nhole)
+
         if self.activation == 'sigmoid':
             x = torch.relu(self.layer1(x)) # shape: (batch, hidden_dim, L//2)
         elif self.activation == 'tanh':
@@ -708,11 +706,15 @@ class HoleOnLocalRule(nn.Module):
 
         batch_size, L, C = x.shape
         device = x.device
-        hole_mask = (x[:, :, 0] == 1)   # (B, L) boolean mask
-        idxs = torch.nonzero(hole_mask, as_tuple=False)    # (B*nhole, 2)
-        hole_pos = idxs[:, 1].view(batch_size, 1).to(device)  # (B, nhole)
-        hole_vec = torch.zeros(batch_size, L, device=device)
-        hole_vec[torch.arange(batch_size), hole_pos[:,0]] = 1.0
+        # hole_mask = (x[:, :, 0] == 1)   # (B, L) boolean mask
+        # idxs = torch.nonzero(hole_mask, as_tuple=False)    # (B*nhole, 2)
+        # hole_pos = idxs[:, 1].view(batch_size, 1).to(device)  # (B, nhole)
+        # hole_vec = torch.zeros(batch_size, L, device=device)
+        # hole_vec[torch.arange(batch_size), hole_pos[:,0]] = 1.0
+
+        # obtain holes per sample encoded as channel 0 == 1
+        hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        hole_vec = hole_mask  # already (B, L) with 1.0 at hole position
 
         yhole = self.fc(hole_vec)
         yhole = torch.tanh(yhole.pow(3))

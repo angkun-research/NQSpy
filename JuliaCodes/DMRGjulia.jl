@@ -137,20 +137,20 @@ function EntanglementEntropy(psi::MPS; cut=div(length(siteinds(psi)), 2))
     #return p
 end
 
-N = 20 #31 #21 #31 #50 + 1
+N = 51 #21 #31 #50 + 1
 #sites = siteinds("Electron", N; conserve_qns=true)
 sites = siteinds("tJ", N; conserve_qns=true)
-t1 = 0.0 #1.0
-t2 = 0.0 #0.5 #-1.0
+t1 = 1.0 #1.0
+t2 = 0.5 #0.5 #-1.0
 U = 10^10 # need to be very large to both prohibit double occupancy and improve convergence
 tJ = true
-J1 = 1.0 #1.0*0.1 #1.0
-J2 = 1.1 #0.9*0.1 #0.5
+J1 = 0.0 #1.0*0.1 #1.0
+J2 = 0.0 #0.9*0.1 #0.5
 
 HMPO = hamiltonian(sites, t1, t2; U=U, tJ=tJ, J1=J1, J2=J2);
 
 state0 = [isodd(i) ? "Up" : "Dn" for i in 1:length(sites)]
-#state0[5] = "Emp" # add one hole
+state0[5] = "Emp" # add one hole
 #state0[6] = "Emp" 
 #state0 = ["Up" for i in 1:length(sites)] # empty lattice
 #state0[1] = "Emp"
@@ -166,7 +166,7 @@ state0 = [isodd(i) ? "Up" : "Dn" for i in 1:length(sites)]
 psi0 = randomMPS(sites,state0; linkdims=50)
 #psi0 = productMPS(sites, state0) # better for large U
 
-nsweeps = 100 # number of sweeps is 5
+nsweeps = 200 # number of sweeps is 5
 maxdim = [1024]#[1024]#[16,16,16,16,16,32,32,32,32,32,
         #64,64,64,64,64,128,128,128,128,128,
         #256,256,256,256,256,512,512,512,512,512,

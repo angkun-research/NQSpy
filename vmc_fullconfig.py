@@ -48,53 +48,53 @@ def sr_update_optimizer_fullconfig(psi, psi_vals, Hpsi, probs,E_mean, optimizer,
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
-L = 15 #11
+L = 19 #11
 t1 = 1.0
 t2 = 0.5
 J1 = 1.0 #1.0
 J2 = 0.9 #0.9 #0.81/100
-basis = build_MB_basis(L)
-# Build basis tensor once
-s_np = np.stack([state_to_onehot(s, L) for s in basis])
-s_tensor = torch.from_numpy(s_np).float().to(device)
+# basis = build_MB_basis(L)
+# # Build basis tensor once
+# s_np = np.stack([state_to_onehot(s, L) for s in basis])
+# s_tensor = torch.from_numpy(s_np).float().to(device)
 
-# Build Hamiltonian once
-H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-Hsparse = adjlist_to_csr(H_ind, H_val).tocoo()
+# # Build Hamiltonian once
+# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+# Hsparse = adjlist_to_csr(H_ind, H_val).tocoo()
 
-indices = torch.tensor(
-    np.vstack([Hsparse.row, Hsparse.col]),
-    dtype=torch.long,
-    device=device,
-)
-values = torch.tensor(Hsparse.data, dtype=torch.float32, device=device)
-H_torch = torch.sparse_coo_tensor(
-    indices,
-    values,
-    size=Hsparse.shape,
-    device=device,
-).coalesce() # shape (num_states, num_states)
+# indices = torch.tensor(
+#     np.vstack([Hsparse.row, Hsparse.col]),
+#     dtype=torch.long,
+#     device=device,
+# )
+# values = torch.tensor(Hsparse.data, dtype=torch.float32, device=device)
+# H_torch = torch.sparse_coo_tensor(
+#     indices,
+#     values,
+#     size=Hsparse.shape,
+#     device=device,
+# ).coalesce() # shape (num_states, num_states)
 
 
-# compared to exact diagonalization
-eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# eigvals, eigvecs = la.eigh(H)
-print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
-exact_gs = eigvecs[:, 0]
-print("Dimension of Hilbert space:", len(basis))
-E_exact = eigvals[0] 
-print(f"Exact ground state energy for L={L}: {E_exact}")
+# # compared to exact diagonalization
+# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# # eigvals, eigvecs = la.eigh(H)
+# print(f"Exact ground state energy for L {L}: {eigvals[0:3]}")
+# exact_gs = eigvecs[:, 0]
+# print("Dimension of Hilbert space:", len(basis))
+# E_exact = eigvals[0] 
+# print(f"Exact ground state energy for L={L}: {E_exact}")
 
 # h 128, k 5 for L=7;
-hidden_dim = 22 #64 #16 
-kernel_size = 5
+hidden_dim = 10 #64 #16 
+kernel_size = 8
 print("hidden_dim:", hidden_dim, "kernel_size:", kernel_size)
 psi = VBSNN(L, Conv_dim=hidden_dim,kernel_size=kernel_size)
 psi.to(device)
 # print number of parameters
 n_params = sum(p.numel() for p in psi.parameters() if p.requires_grad)
 print(f"Number of parameters in the neural network: {n_params}")
-#exit()
+exit()
 #optimizer = optim.Adam(psi.parameters(), lr=1e-2) # 1e-2 3e-3
 optimizer = optim.SGD(psi.parameters(), lr=1e-0)
 

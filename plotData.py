@@ -2,6 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+plt.rcParams['font.family'] = 'serif'       # or 'sans-serif', 'monospace'
+plt.rcParams['font.serif'] = ['Times New Roman']
+# plt.rcParams['font.sans-serif'] = ['Arial']
+plt.rcParams['mathtext.fontset'] = 'custom'
+plt.rcParams['mathtext.rm'] = 'Times New Roman'
+plt.rcParams['mathtext.it'] = 'Times New Roman:italic'
+plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
+
 # Only spin results (no hopping)
 # Ls = [12,14,16,18,20]
 # # hid=16, kernel=2, train on 2,4,6,8,10
@@ -251,7 +259,7 @@ import pandas as pd
 # 	plt.show()
 
 
-# Final plot system size scaling, t2=0.5, J2=0.9
+# # Final plot system size scaling, t2=0.5, J2=0.9
 # Ls = [5,7,9,11,13,15,17,19]
 # # cutoff 1e-12
 # Chis = [8,19,38,54,75,91,99,107]
@@ -268,10 +276,12 @@ import pandas as pd
 # FidL15 = [0.98680770,0.99310958]
 # FCparamsL15 = [249,573,1691,7821,46551,1113089]
 # # Physical NN fidelity threshold 1e-3 
-# Kernals = [2,3,3,4,5,7,9]
-# Dhidden = [4,4,6,8,8,12,16]
-# Physicalparams = [81,105,181,305,353,697,1153]
-# PhysicalFids = [0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+# Kernals = [2,2,2,4,5,6,7,8] #[2,3,3,4,5,7,9]
+# Dhidden = [2,3,4,5,6,6,7,8] #[4,4,6,8,8,12,16]
+# Physicalparams = [37,64,97,176,253,289,386,497] #[81,105,181,305,353,697,1153]
+# PhysicalFids = [0.9999298453330994,0.9996610879898072,0.9991247057914734,0.9988309144973756,0.99885493516922,0.9986146092414856,0.9980713725090028,0.989775776863098] 
+# #[0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+# RelativeEerrors = [1.67e-4,3.86e-4,5.54e-4,9.96e-4,8.85e-4,7.67e-4,9.51e-4,1.35e-2]
 # # Physical NN fidelity threshold 1e-2
 # # Kernals = [2,2,2,2]
 # # Dhidden = [2,2,2,4]
@@ -284,15 +294,28 @@ import pandas as pd
 # PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
 # PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
 
+# coeffsnn = np.polyfit(Ls[:len(Physicalparams)], Physicalparams, deg=2)
+# coeffsmps = np.polyfit(Ls[:len(MPSparams)], MPSparams, deg=4)
+# #print("Fitted polynomial coefficients:", coeffsmps)
+# poly_mps = np.poly1d(coeffsmps)
+# x_fit = [5,7,9,11,13,15,17,19,21]  # Extend x values for extrapolation
+# y_fit_mps = poly_mps(x_fit)
+# poly_nn = np.poly1d(coeffsnn)
+# y_fit_nn = poly_nn(x_fit)
+# print(y_fit_nn)
+
 # if __name__ == "__main__":
 #     fig, ax1 = plt.subplots(figsize=(6,4))
 
 #     # left axis: 1 - Fidelity (log scale)
-#     line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
-#     ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
+#     # line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
+#     # ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
+#     line = ax1.plot(Ls[:len(Physicalparams)], Physicalparams, 'x', label=r'VBS NN') 
+#     ax1.plot(x_fit, y_fit_nn, '--', label=None, color=line[0].get_color())
 #     ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
 #     #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
-#     ax1.plot(Ls[:len(MPSparams)], MPSparams, '-^', label=r'MPS')
+#     line = ax1.plot(Ls[:len(MPSparams)], MPSparams, '^', label=r'MPS')
+#     ax1.plot(x_fit, y_fit_mps, '--', color=line[0].get_color(), label=None)
 #     ax1.set_xlabel(r'$L$')
 #     ax1.set_ylabel(r'Number of parameters')
 #     ax1.set_yscale('log')
@@ -362,3 +385,38 @@ import pandas as pd
 # outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
 # plt.savefig(outname, dpi=300)
 # plt.show()
+
+# Plot comparison of different activations
+csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_1.csv"
+Loss_tanh_1 = pd.read_csv(csv_path)['Loss'].values
+fid_tanh_1 = pd.read_csv(csv_path)['Fidelity'].values[0]
+NH = pd.read_csv(csv_path)['NH'].values[0]
+csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_3.csv"
+Loss_tanh_3 = pd.read_csv(csv_path)['Loss'].values
+fid_tanh_3 = pd.read_csv(csv_path)['Fidelity'].values[0]
+csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_5.csv"
+Loss_tanh_5 = pd.read_csv(csv_path)['Loss'].values
+fid_tanh_5 = pd.read_csv(csv_path)['Fidelity'].values[0]
+csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_relu.csv"
+Loss_relu = pd.read_csv(csv_path)['Loss'].values
+fid_relu = pd.read_csv(csv_path)['Fidelity'].values[0]
+csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_sigmoid.csv"
+Loss_sigmoid = pd.read_csv(csv_path)['Loss'].values
+fid_sigmoid = pd.read_csv(csv_path)['Fidelity'].values[0]
+
+plt.figure(figsize=(6,4))
+plt.plot(Loss_relu/NH, label=r'ReLU, $\mathrm{fidelity}$=%.7f' % fid_relu)
+plt.plot(Loss_sigmoid/NH, label=r'Sigmoid, $\mathrm{fidelity}$=%.7f' % fid_sigmoid)
+plt.plot(Loss_tanh_1/NH, label=r'$\tanh(x)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_1)
+plt.plot(Loss_tanh_3/NH, label=r'$\tanh(x^3)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_3)
+plt.plot(Loss_tanh_5/NH, label=r'$\tanh(x^5)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_5)
+plt.xlabel(r'Epoch')
+plt.ylabel(r'Mean Squared Loss')
+plt.tick_params(axis='both', labelsize=12)
+plt.legend(loc='center right', prop={'size': 9})
+plt.yscale('log')
+plt.grid(False)
+plt.tight_layout()
+outname = '/Users/angkunwu/Desktop/activation_comparison.png'
+plt.savefig(outname, dpi=300)
+plt.show()
