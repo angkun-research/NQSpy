@@ -810,3 +810,49 @@ class LdepConvPlusFC(nn.Module):
         x_out = self.finallayer(x_out)
 
         return x_out.squeeze(-1)
+    
+
+
+class LocalRule(nn.Module):
+    def __init__(self, in_channels=4, hidden_dim=32, kernel_size=2, stride=2, nholes=1):
+        super(LocalRule, self).__init__()
+        self.nholes = nholes
+        self.pad = (kernel_size-1)//2
+        self.layer1 = nn.Conv1d(in_channels, hidden_dim, kernel_size, padding=self.pad, stride=stride)
+        # 1x1 conv to produce sign and value per pair (classes: +1, -1, 0)
+        self.classifier = nn.Conv1d(hidden_dim, 2, kernel_size=1)
+        # produce 3 logits per pair: [p_updown, p_downup, p_other]
+        #self.classifier = nn.Conv1d(hidden_dim, 3, kernel_size=1)
+        self.pool = GeometricPool1d()
+        self.finallayer = nn.Linear(hidden_dim, 1)
+        #self.finallayer = nn.Linear(1, 1)
+
+    def forward(self, x):
+        # remove hole site before convolution
+        batch_size, L, C = x.shape
+        device = x.device
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        # get hole indices (shape: (B,))
+        # hole_idx = torch.argmax(x[:, :, 0], dim=1)
+        # # build mask: True for positions that are NOT the hole
+        # idx = torch.arange(L, device=device)
+        # mask = idx.unsqueeze(0) != hole_idx.unsqueeze(1)  # (B, L)
+        # # select non-hole positions and reshape -> (B, L-1, C)
+        # x_nohole = x[mask].view(batch_size, L - 1, C)
+        # # x shape: (batch, L, 4) -> (batch, 4, L)
+        # x = x_nohole.permute(0, 2, 1)
+
+        # assume exactly one hole per sample encoded as channel 0 == 1
+        hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        hole_pos = torch.argmax(hole_mask, dim=1)  # (B,) — fixed shape, vmap-safe 
+        # Build indices [0,1,...,hole-1, hole+1,...,L-1] per sample
+        idx = torch.arange(L - self.nholes, device=device).unsqueeze(0).expand(batch_size, -1)  # (B, L-nhole)
+        idx = idx + (idx >= hole_pos.unsqueeze(1)).long()  # shift indices past the hole
+        x_nohole = torch.gather(x, 1, idx.unsqueeze(-1).expand(-1, -1, C))  # (B, L-nhole, C)
+        x = x_nohole.permute(0, 2, 1)  # (B, C, L-nhole)
+
+        x = torch.tanh(self.layer1(x).pow(5)) # .pow(3)
+        x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
+        x = self.finallayer(x)
+
+        return x.squeeze(-1)

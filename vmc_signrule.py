@@ -13,7 +13,7 @@ from vmc_utils import TightBinding_coeff, find_state_coeff
 from vmc_utils import generate_initial_state
 from vmc_utils import VBSNN, sr_update, Obtain_Sampling_batch, sr_update_optimizer
 from vmc_utils import cleanup_memory
-from NeuralNetworks import ConvSkipHole,HoleOnLocalRule
+from NeuralNetworks import ConvSkipHole,HoleOnLocalRule,LocalRule
 import random
 from tqdm import trange 
 import numpy.linalg as la
@@ -62,31 +62,32 @@ def Obtain_Sampling(initial_state, n_samples, L, pretrain=False, burnin = False,
     return Psis, Elocs, state
 
 
-L = 15 #31
+L = 51 #31
 t1 = 1.0
 t2 = 0.5
 J1 = 0.0 #0.0
 J2 = 0.0 #0.0 #0.81/100
-basis = build_MB_basis(L)
-basis_dict = {state: idx for idx, state in enumerate(basis)}
-#H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
-#Hsparse = csr_matrix(H)
-H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
-Hsparse = adjlist_to_csr(H_ind, H_val)
-eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
-# eigvals, eigvecs = la.eigh(H)
-print(f"Exact ground state energy: {eigvals[0:3]}")
-exact_gs = eigvecs[:, 0]
-print("Dimension of Hilbert space:", len(basis))
+# basis = build_MB_basis(L)
+# basis_dict = {state: idx for idx, state in enumerate(basis)}
+# #H = build_Hamiltonian(L, t1, t2, basis, J1=J1, J2=J2)
+# #Hsparse = csr_matrix(H)
+# H_ind, H_val = build_Hamiltonian_adjlist(L, t1, t2, basis, J1=J1, J2=J2)
+# Hsparse = adjlist_to_csr(H_ind, H_val)
+# eigvals, eigvecs = eigsh(Hsparse, k=3, which='SA')
+# # eigvals, eigvecs = la.eigh(H)
+# print(f"Exact ground state energy: {eigvals[0:3]}")
+# exact_gs = eigvecs[:, 0]
+# print("Dimension of Hilbert space:", len(basis))
 
-E_exact = eigvals[0] #-2.5537213198833166 # L=51
+E_exact = -2.5537213198833166 # L=51
 print(f"Exact ground state energy for L={L}: {E_exact}")
 
-LocalRule = ConvSkipHole(in_channels=4, hidden_dim=32, kernel_size=2, stride=2, activation='tanh')
+LocalRule = LocalRule(in_channels=4, hidden_dim=16, kernel_size=2, stride=2)
+#ConvSkipHole(in_channels=4, hidden_dim=32, kernel_size=2, stride=2, activation='tanh')
 optimizer = optim.Adam(LocalRule.parameters(), lr=0.01)#, weight_decay=1e-3) #lr=0.01
 
 folder = "data/"
-filename = f"SignRule_t2{t2}_hidden32.pth"
+filename = f"SignRule_t2{t2}_hidden16.pth"
 save_path = folder + filename
 checkpoint = torch.load(save_path, map_location=device)
 LocalRule.load_state_dict(checkpoint['model_state_dict'])
@@ -94,7 +95,16 @@ optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
 LocalRule.to(device)
 print("Loaded SignRule.")
 
-hidden_dim = 32 #128 #32
+# LocalRule.eval()
+# test_state = (15,(2,3,5,7,9,11,13))#generate_initial_state(L)
+# print("Test state:", test_state)
+# test_onehot = torch.tensor(state_to_onehot(test_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+# with torch.no_grad():
+#     sign_pred = LocalRule(test_onehot)
+# print("Predicted sign for a test state:", sign_pred.item())
+# exit()
+
+hidden_dim = L #128 #32
 psi = HoleOnLocalRule(LocalRule, L,hidden_dim=hidden_dim)
 # print number of parameters
 n_params = sum(p.numel() for p in psi.parameters() if p.requires_grad)
@@ -127,6 +137,14 @@ for step in trange(epochs, desc="VMC Sampling"):
     # if step % (epochs//20) == 0:
     #     print(f"Step {step}: <E> = {E_mean.item():.6f}")
     print(f"Step {step}: <E> = {E_mean.item():.6f}")
+
+state = generate_initial_state(L) 
+n_samples = 10000
+for k in range(5):
+    _, energies, state = Obtain_Sampling(state, n_samples, L)
+    E_tensor = torch.stack(energies).squeeze()
+    E_mean = E_tensor.mean()
+    print(f"Next sample {k}: <E> = {E_mean.item():.6f}")
 
 # n_walkers = 64 #32 #64 
 # initial_states = [generate_initial_state(L) for _ in range(n_walkers)]  
@@ -189,15 +207,35 @@ for step in trange(epochs, desc="VMC Sampling"):
 #     energies, E_tensor = None, None
 #     cleanup_memory(free_vars=None, optimizer=optimizer)
 
-print(f"Step {step}: <E> = {E_mean.item():.6f}")
+# print(f"Step {step}: <E> = {E_mean.item():.6f}")
+
+# states = [generate_initial_state(L, singlet=True) for _ in range(n_walkers)]  # reinitialize walkers every 100 steps to reduce autocorrelation
+# _, _, states, _ = Obtain_Sampling_batch(psi, L, states, burn_in, t2=t2, J1=J1, J2=J2, device=device, burnin=True)  # burn-in for all walkers
+# for k in range(10):
+#     _, energies, states, _ = Obtain_Sampling_batch(psi, L, states, n_samples, t2=t2, J1=J1, J2=J2, device=device, Sampler=Sampler)
+#     if torch.is_tensor(energies):
+#         E_tensor = energies.squeeze()
+#     else:
+#         E_tensor = torch.stack(energies).squeeze()
+#     E_mean = E_tensor.mean()
+#     E_std = E_tensor.var().sqrt()
+#     E_se = E_std / np.sqrt(len(E_tensor))
+#     print(f"Final evaluation {k}: <E> = {E_mean.item():.6f} ± {E_se.item():.6f}")
+#     energy_record.append(E_mean.item())
+#     error_record.append(E_se.item())
+#     # free Python containers / references you no longer need
+#     energies, E_tensor = None, None
 
 print("VMC finished.")
 
-for k in range(5):
-    _, energies, state = Obtain_Sampling(state, n_samples, L)
-    E_tensor = torch.stack(energies).squeeze()
-    E_mean = E_tensor.mean()
-    print(f"Next sample {k}: <E> = {E_mean.item():.6f}")
+# output energy_record to csv
+# import pandas as pd
+# totalsam = n_walkers* n_samples
+# totalsam = int(totalsam)
+# df = pd.DataFrame({'Energy': energy_record, 'Error': error_record})
+# csv_path = f"data/energy_error_signrule_L{L}_t2{t2}_hidden{hidden_dim}_kernel{kernel_size}_sam{totalsam}_epoch{epochs}.csv"
+# df.to_csv(csv_path, index=False)
+# print(f"Saved energy and error record to {csv_path}")
 
 # # check final fidelity
 # with torch.no_grad():
