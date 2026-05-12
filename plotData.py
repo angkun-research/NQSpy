@@ -23,7 +23,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # FidsJ215Train = [0.99183154,0.98012489,0.96675253,0.94783098]
 
 # if __name__ == "__main__":
-#     fig, ax = plt.subplots(figsize=(6,4))
+#     fig, ax = plt.subplots(figsize=(6*0.85,4*0.85)) #(6,4)
 #     line = ax.plot(Ls, np.array(Fids), '-o', label=r'$J_2=1.0$',markersize=4)
 #     ax.plot(Ls[:len(FidsTrain)], np.array(FidsTrain), '--o', label=None, color=line[0].get_color(),markerfacecolor='none')
 #     line = ax.plot(Ls, np.array(FidsJ20), '-s', label=r'$J_2=0.0$',markersize=4)
@@ -31,7 +31,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 #     line = ax.plot(Ls, np.array(FidsJ215), '-^', label=r'$J_2=1.5$',markersize=4)
 #     ax.plot(Ls[:len(FidsJ215Train)], np.array(FidsJ215Train), '--^', label=None, color=line[0].get_color(),markerfacecolor='none')
 #     ax.set_xlabel(r'$L$')
-#     ax.set_ylabel(r'$|\langle \Psi_{\mathrm{ed}}|\Psi_{\mathrm{test}}\rangle|$')
+#     ax.set_ylabel(r'$|\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{NQS}}\rangle|$')
 #     #ax.set_yscale('log')
 #     ax.grid(False)
 #     ax.legend(loc='lower left')
@@ -86,7 +86,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	#print('Saved', outname)
 #     plt.show()
 
-
+# VMC exact case
 # Ls = [11,21,31] #21
 # DHs = [2772,3879876,4.81e+9]
 # t2 = 0.5
@@ -119,9 +119,11 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # print("Final averaged energy for L=31:", E_final,"relative error:", (E_final - E_exact[2])/E_exact[2])
 
 # #xs = np.arange(len(Es_all[0])) * 20 
-# plt.figure(figsize=(6,4))
+# plt.figure(figsize=(6*0.8,4*0.8))
 # for k in range(len(Ls)):
-# 	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
+# 	mantissa, exponent = f"{DHs[k]:.2e}".split("e")
+# 	label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
+# 	#label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
 # 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
 # 	inds = np.arange(0, len(Es_all[k]), 2)
 # 	line = plt.errorbar(
@@ -229,6 +231,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	ax_top.legend(loc='center left')
 # 	ax_top.set_yscale('log')
 # 	ax_top.set_ylim(1, 200)
+# 	ax_top.set_xlim(-0.02, 2.02)
 # 	ax_top.axhline(y=3, color='red', linestyle='--')
 # 	ax_top.grid(False)
 
@@ -237,7 +240,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	line2 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s',label=r'kernel$=2,D_{hid}=16$')
 # 	line3 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^',label=r'kernel$=5,D_{hid}=16$')
 # 	line4 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x',label=r'kernel$=5,D_{hid}=64$')
-# 	ax_mid.set_ylabel(r'1 - $|\langle \Psi_{\mathrm{ed}}|\Psi_{\mathrm{test}}\rangle|$')
+# 	ax_mid.set_ylabel(r'1 - $|\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{test}}\rangle|$')
 # 	ax_mid.set_yscale('log')
 # 	ax_mid.set_ylim(1e-5, 0.6)
 # 	ax_mid.legend(loc='lower right', fontsize=9)
@@ -259,85 +262,86 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	plt.show()
 
 
-# # Final plot system size scaling, t2=0.5, J2=0.9
-# Ls = [5,7,9,11,13,15,17,19]
-# # cutoff 1e-12
-# Chis = [8,19,38,54,75,91,99,107]
-# MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
-# Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
-#         0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
-# GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
-#              0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
-# # cutoff min 1- fidelity 1e-2 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
-# FChiddim = [8,13,26,68,190,512]
-# FCparams = [249,573,1691,7821,46551,1113089] #294401]
-# FChidL15 = [512,1024]
-# FCparamL15 = [294401, 1113089]
-# FidL15 = [0.98680770,0.99310958]
-# FCparamsL15 = [249,573,1691,7821,46551,1113089]
-# # Physical NN fidelity threshold 1e-3 
-# Kernals = [2,2,2,4,5,6,7,8] #[2,3,3,4,5,7,9]
-# Dhidden = [2,3,4,5,6,6,7,8] #[4,4,6,8,8,12,16]
-# Physicalparams = [37,64,97,176,253,289,386,497] #[81,105,181,305,353,697,1153]
-# PhysicalFids = [0.9999298453330994,0.9996610879898072,0.9991247057914734,0.9988309144973756,0.99885493516922,0.9986146092414856,0.9980713725090028,0.989775776863098] 
-# #[0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
-# RelativeEerrors = [1.67e-4,3.86e-4,5.54e-4,9.96e-4,8.85e-4,7.67e-4,9.51e-4,1.35e-2]
-# # Physical NN fidelity threshold 1e-2
-# # Kernals = [2,2,2,2]
-# # Dhidden = [2,2,2,4]
-# # Physicalparams = [37,41,45,105]
-# # PhysicalFids = [0.99992979,0.99958485,0.99851441,0.99759948]
-# # Physical NN relative energy error 1e-3
-# Kernals2 = [2,3,4,4,5,5]
-# Dhidden2 = [14,16,18,20,20,22]
-# Physicalparams2 = [421,609,829,1001,1121,1321]
-# PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
-# PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
+# Final plot system size scaling, t2=0.5, J2=0.9
+Ls = [5,7,9,11,13,15,17,19]
+# cutoff 1e-12
+Chis = [8,19,38,54,75,91,99,107]
+MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
+Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
+        0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
+GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
+             0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
+# cutoff min 1- fidelity 1e-2 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
+FChiddim = [8,13,26,68,190,512]
+FCparams = [249,573,1691,7821,46551,1113089] #294401]
+FChidL15 = [512,1024]
+FCparamL15 = [294401, 1113089]
+FidL15 = [0.98680770,0.99310958]
+FCparamsL15 = [249,573,1691,7821,46551,1113089]
+# Physical NN fidelity threshold 1e-3 
+Kernals = [2,2,2,4,5,6,7,8] #[2,3,3,4,5,7,9]
+Dhidden = [2,3,4,5,6,6,7,8] #[4,4,6,8,8,12,16]
+Physicalparams = [37,64,97,176,253,289,386,497] #[81,105,181,305,353,697,1153]
+PhysicalFids = [0.9999298453330994,0.9996610879898072,0.9991247057914734,0.9988309144973756,0.99885493516922,0.9986146092414856,0.9980713725090028,0.989775776863098] 
+#[0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+RelativeEerrors = [1.67e-4,3.86e-4,5.54e-4,9.96e-4,8.85e-4,7.67e-4,9.51e-4,1.35e-2]
+# Physical NN fidelity threshold 1e-2
+# Kernals = [2,2,2,2]
+# Dhidden = [2,2,2,4]
+# Physicalparams = [37,41,45,105]
+# PhysicalFids = [0.99992979,0.99958485,0.99851441,0.99759948]
+# Physical NN relative energy error 1e-3
+Kernals2 = [2,3,4,4,5,5]
+Dhidden2 = [14,16,18,20,20,22]
+Physicalparams2 = [421,609,829,1001,1121,1321]
+PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
+PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
 
-# coeffsnn = np.polyfit(Ls[:len(Physicalparams)], Physicalparams, deg=2)
-# coeffsmps = np.polyfit(Ls[:len(MPSparams)], MPSparams, deg=4)
-# #print("Fitted polynomial coefficients:", coeffsmps)
-# poly_mps = np.poly1d(coeffsmps)
-# x_fit = [5,7,9,11,13,15,17,19,21]  # Extend x values for extrapolation
-# y_fit_mps = poly_mps(x_fit)
-# poly_nn = np.poly1d(coeffsnn)
-# y_fit_nn = poly_nn(x_fit)
-# print(y_fit_nn)
+coeffsnn = np.polyfit(Ls[:len(Physicalparams)], Physicalparams, deg=2)
+coeffsmps = np.polyfit(Ls[:len(MPSparams)], MPSparams, deg=4)
+#print("Fitted polynomial coefficients:", coeffsmps)
+poly_mps = np.poly1d(coeffsmps)
+x_fit = [5,7,9,11,13,15,17,19,21]  # Extend x values for extrapolation
+y_fit_mps = poly_mps(x_fit)
+poly_nn = np.poly1d(coeffsnn)
+y_fit_nn = poly_nn(x_fit)
+print(y_fit_nn)
 
-# if __name__ == "__main__":
-#     fig, ax1 = plt.subplots(figsize=(6,4))
+if __name__ == "__main__":
+    fig, ax1 = plt.subplots(figsize=(6*0.9,4*0.9))
 
-#     # left axis: 1 - Fidelity (log scale)
-#     # line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
-#     # ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
-#     line = ax1.plot(Ls[:len(Physicalparams)], Physicalparams, 'x', label=r'VBS NN') 
-#     ax1.plot(x_fit, y_fit_nn, '--', label=None, color=line[0].get_color())
-#     ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
-#     #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
-#     line = ax1.plot(Ls[:len(MPSparams)], MPSparams, '^', label=r'MPS')
-#     ax1.plot(x_fit, y_fit_mps, '--', color=line[0].get_color(), label=None)
-#     ax1.set_xlabel(r'$L$')
-#     ax1.set_ylabel(r'Number of parameters')
-#     ax1.set_yscale('log')
-#     ax1.grid(False)
-#     ax1.legend(loc='upper right')
-#     # right axis: gap size scaling
-#     ax2 = ax1.twinx()
-#      # black color
-#     ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
-#     ax2.set_ylabel(r'many-body gap $\Delta$')
-#     ax2.legend(loc='lower center')
-#     ax2.set_yscale('log')
-#     #ax2.set_ylim(0, 160)  
-#     plt.tight_layout()
-#     outname = '/Users/angkunwu/Desktop/scalingLs.png'
-#     plt.savefig(outname, dpi=300)
-#     plt.show()
-
-
-
+    # left axis: 1 - Fidelity (log scale)
+    # line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
+    # ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
+    line = ax1.plot(Ls[:len(Physicalparams)], Physicalparams, 'x', label=r'VBS NN') 
+    ax1.plot(x_fit, y_fit_nn, '--', label=None, color=line[0].get_color())
+    ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
+    #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
+    line = ax1.plot(Ls[:len(MPSparams)], MPSparams, '^', label=r'MPS')
+    ax1.plot(x_fit, y_fit_mps, '--', color=line[0].get_color(), label=None)
+    ax1.set_xlabel(r'$L$')
+    ax1.set_ylabel(r'Number of parameters')
+    ax1.set_yscale('log')
+    ax1.set_xlim(4, 20)
+    ax1.grid(False)
+    ax1.legend(loc='upper right')
+    # right axis: gap size scaling
+    ax2 = ax1.twinx()
+     # black color
+    ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
+    ax2.set_ylabel(r'many-body gap $\Delta$')
+    ax2.legend(loc='lower center')
+    ax2.set_yscale('log')
+    #ax2.set_ylim(0, 160)  
+    plt.tight_layout()
+    outname = '/Users/angkunwu/Desktop/scalingLs.png'
+    plt.savefig(outname, dpi=300)
+    plt.show()
 
 
+
+
+# VMC non-exact case
 # Ls = [11,21,31] #[11,15,21] 
 # DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
 # t2 = 0.5
@@ -360,9 +364,11 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	Errs.append(err)
 
 # #xs = np.arange(len(Es_all[0])) * 20 
-# plt.figure(figsize=(6,4))
+# plt.figure(figsize=(6*0.8,4*0.8))
 # for k in range(len(Ls)):
-# 	label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
+# 	mantissa, exponent = f"{DHs[k]:.2e}".split("e")
+# 	label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
+# 	#label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
 # 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
 # 	inds = np.arange(0, len(Es_all[k]), 1)
 # 	line = plt.errorbar(
@@ -377,7 +383,7 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # plt.xlabel(r'VMC Step')
 # plt.ylabel(r'Energy')
 # plt.legend(loc='best')
-# plt.title(r'$J_1=0.1,\ J_2=0.09$')
+# #plt.title(r'$J_1=0.1,\ J_2=0.09$')
 # plt.xlim(0,200)
 # #plt.xlim(0, len(Es_all[0])*20)
 # plt.grid(False)
@@ -387,36 +393,37 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # plt.show()
 
 # Plot comparison of different activations
-csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_1.csv"
-Loss_tanh_1 = pd.read_csv(csv_path)['Loss'].values
-fid_tanh_1 = pd.read_csv(csv_path)['Fidelity'].values[0]
-NH = pd.read_csv(csv_path)['NH'].values[0]
-csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_3.csv"
-Loss_tanh_3 = pd.read_csv(csv_path)['Loss'].values
-fid_tanh_3 = pd.read_csv(csv_path)['Fidelity'].values[0]
-csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_5.csv"
-Loss_tanh_5 = pd.read_csv(csv_path)['Loss'].values
-fid_tanh_5 = pd.read_csv(csv_path)['Fidelity'].values[0]
-csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_relu.csv"
-Loss_relu = pd.read_csv(csv_path)['Loss'].values
-fid_relu = pd.read_csv(csv_path)['Fidelity'].values[0]
-csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_sigmoid.csv"
-Loss_sigmoid = pd.read_csv(csv_path)['Loss'].values
-fid_sigmoid = pd.read_csv(csv_path)['Fidelity'].values[0]
+# csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_1.csv"
+# Loss_tanh_1 = pd.read_csv(csv_path)['Loss'].values
+# fid_tanh_1 = pd.read_csv(csv_path)['Fidelity'].values[0]
+# NH = pd.read_csv(csv_path)['NH'].values[0]
+# csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_3.csv"
+# Loss_tanh_3 = pd.read_csv(csv_path)['Loss'].values
+# fid_tanh_3 = pd.read_csv(csv_path)['Fidelity'].values[0]
+# csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_5.csv"
+# Loss_tanh_5 = pd.read_csv(csv_path)['Loss'].values
+# fid_tanh_5 = pd.read_csv(csv_path)['Fidelity'].values[0]
+# csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_relu.csv"
+# Loss_relu = pd.read_csv(csv_path)['Loss'].values
+# fid_relu = pd.read_csv(csv_path)['Fidelity'].values[0]
+# csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_sigmoid.csv"
+# Loss_sigmoid = pd.read_csv(csv_path)['Loss'].values
+# fid_sigmoid = pd.read_csv(csv_path)['Fidelity'].values[0]
 
-plt.figure(figsize=(6,4))
-plt.plot(Loss_relu/NH, label=r'ReLU, $\mathrm{fidelity}$=%.7f' % fid_relu)
-plt.plot(Loss_sigmoid/NH, label=r'Sigmoid, $\mathrm{fidelity}$=%.7f' % fid_sigmoid)
-plt.plot(Loss_tanh_1/NH, label=r'$\tanh(x)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_1)
-plt.plot(Loss_tanh_3/NH, label=r'$\tanh(x^3)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_3)
-plt.plot(Loss_tanh_5/NH, label=r'$\tanh(x^5)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_5)
-plt.xlabel(r'Epoch')
-plt.ylabel(r'Mean Squared Loss')
-plt.tick_params(axis='both', labelsize=12)
-plt.legend(loc='center right', prop={'size': 9})
-plt.yscale('log')
-plt.grid(False)
-plt.tight_layout()
-outname = '/Users/angkunwu/Desktop/activation_comparison.png'
-plt.savefig(outname, dpi=300)
-plt.show()
+# plt.figure(figsize=(6*0.9,4*0.9))
+# plt.plot(Loss_relu/NH, label=r'ReLU, $\mathrm{fidelity}$=%.7f' % fid_relu, linewidth=4)
+# plt.plot(Loss_sigmoid/NH, label=r'Sigmoid, $\mathrm{fidelity}$=%.7f' % fid_sigmoid)
+# plt.plot(Loss_tanh_1/NH, label=r'$\tanh(x)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_1)
+# plt.plot(Loss_tanh_3/NH, label=r'$\tanh(x^3)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_3)
+# plt.plot(Loss_tanh_5/NH, label=r'$\tanh(x^5)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_5)
+# plt.xlabel(r'Epoch')
+# plt.ylabel(r'Mean Squared Loss')
+# plt.xlim(-1, 2000)
+# plt.tick_params(axis='both', labelsize=12)
+# plt.legend(loc='center right', prop={'size': 9})
+# plt.yscale('log')
+# plt.grid(False)
+# plt.tight_layout()
+# outname = '/Users/angkunwu/Desktop/activation_comparison.png'
+# plt.savefig(outname, dpi=300)
+# plt.show()
