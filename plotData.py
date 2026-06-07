@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 import pandas as pd
 
 plt.rcParams['font.family'] = 'serif'       # or 'sans-serif', 'monospace'
@@ -118,33 +119,70 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # E_final = np.mean(Es_all[2][-10:])
 # print("Final averaged energy for L=31:", E_final,"relative error:", (E_final - E_exact[2])/E_exact[2])
 
-# #xs = np.arange(len(Es_all[0])) * 20 
-# plt.figure(figsize=(6*0.8,4*0.8))
+# fig, ax = plt.subplots(figsize=(6*0.8, 4*0.8),constrained_layout=True)
+
+# colors = []
 # for k in range(len(Ls)):
-# 	mantissa, exponent = f"{DHs[k]:.2e}".split("e")
-# 	label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
-# 	#label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
-# 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
-# 	inds = np.arange(0, len(Es_all[k]), 2)
-# 	line = plt.errorbar(
-#         inds, #np.arange(len(Es_all[k][inds])),
+#     mantissa, exponent = f"{DHs[k]:.2e}".split("e")
+#     label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
+
+#     inds = np.arange(0, len(Es_all[k]), 2)
+#     line = ax.errorbar(
+#         inds,
 #         Es_all[k][inds],
-#         yerr=Errs[k][inds],          # per-point vertical error bars
-#         fmt='-o',              # line + circle markers
-#         capsize=2,             # little cap on bar ends
-#         elinewidth=1,markersize=2,label=label,
-# 		linewidth=1,
-#         )
-# 	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
-# plt.xlabel(r'VMC Step')
-# plt.ylabel(r'Energy')
-# plt.legend(loc='best')
-# plt.xlim(0,500)#len(inds))
-# #plt.xlim(0, len(Es_all[0])*20)
-# plt.grid(False)
-# plt.tight_layout()
+#         yerr=Errs[k][inds],
+#         fmt='-o',
+#         capsize=2,
+#         elinewidth=0.4, 
+#         markersize=1,
+#         linewidth=1,
+#         label=label,
+#     )
+#     c = line[0].get_color()
+#     colors.append(c)
+#     ax.axhline(E_exact[k], color=c, linestyle='--')
+
+# ax.set_xlabel(r'VMC Step')
+# ax.set_ylabel(r'Energy')
+# ax.legend(loc='best')
+# ax.set_xlim(0, 500)
+# ax.grid(False)
+
+# # Inset: zoom into late VMC steps to show convergence
+# # [x0, y0, w, h] in parent-axes fraction (0 to 1)
+# # x0,y0 = lower-left corner of inset
+# # w,h   = inset width/height
+# axins = ax.inset_axes([0.5, 0.2, 0.45, 0.4], transform=ax.transAxes)
+
+# # Use last 25% of steps across curves
+# x_max = min(np.arange(0, len(e), 2)[-1] for e in Es_all)
+# x_min = int(0.75 * x_max)
+
+# yvals = []
+# for k in range(len(Ls)):
+#     inds = np.arange(0, len(Es_all[k]), 2)
+#     mask = (inds >= x_min) & (inds <= x_max)
+#     xk = inds[mask]
+#     yk = Es_all[k][inds][mask]
+
+#     axins.plot(xk, yk, '-o', color=colors[k], markersize=2, linewidth=1)
+#     axins.axhline(E_exact[k], color=colors[k], linestyle='--', linewidth=1)
+
+#     if len(yk) > 0:
+#         yvals.extend(yk.tolist())
+#     yvals.append(E_exact[k])
+
+# axins.set_xlim(x_min, x_max)
+# if len(yvals) > 0:
+#     ymin, ymax = min(yvals), max(yvals)
+#     pad = max(1e-5, 0.08 * (ymax - ymin))
+#     axins.set_ylim(ymin - pad, ymax + pad)
+
+# axins.tick_params(labelsize=8)
+# mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", lw=0.8)
+
 # outname = '/Users/angkunwu/Desktop/vmc_exact.png'
-# plt.savefig(outname, dpi=300)
+# plt.savefig(outname, dpi=1000)
 # plt.show()
 
 
@@ -237,10 +275,10 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 
 # 	# middle: 1 - Fidelity (log scale)
 # 	line1 = ax_mid.plot(J2s, 1 - np.array(Fidelity_exact), '-o',label=r'WF at $J_1=J_2=0$')
-# 	line2 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s',label=r'kernel$=2,D_{hid}=16$')
-# 	line3 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^',label=r'kernel$=5,D_{hid}=16$')
-# 	line4 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x',label=r'kernel$=5,D_{hid}=64$')
-# 	ax_mid.set_ylabel(r'1 - $|\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{test}}\rangle|$')
+# 	line2 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s',label=r'kernel$=2,D_\mathrm{hidden}=16$')
+# 	line3 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^',label=r'kernel$=5,D_\mathrm{hidden}=16$')
+# 	line4 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x',label=r'kernel$=5,D_\mathrm{hidden}=64$')
+# 	ax_mid.set_ylabel(r'1 - $\left |\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{test}}\rangle\right|$')
 # 	ax_mid.set_yscale('log')
 # 	ax_mid.set_ylim(1e-5, 0.6)
 # 	ax_mid.legend(loc='lower right', fontsize=9)
@@ -258,139 +296,191 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 # 	plt.subplots_adjust(hspace=0.08)  # tighten vertical spacing
 # 	plt.tight_layout()
 # 	outname = '/Users/angkunwu/Desktop/nonexactJs.png'
-# 	plt.savefig(outname, dpi=300)
+# 	plt.savefig(outname, dpi=1000)
 # 	plt.show()
 
 
-# Final plot system size scaling, t2=0.5, J2=0.9
-Ls = [5,7,9,11,13,15,17,19]
-# cutoff 1e-12
-Chis = [8,19,38,54,75,91,99,107]
-MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
-Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
-        0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
-GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
-             0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
-# cutoff min 1- fidelity 1e-2 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
-FChiddim = [8,13,26,68,190,512]
-FCparams = [249,573,1691,7821,46551,1113089] #294401]
-FChidL15 = [512,1024]
-FCparamL15 = [294401, 1113089]
-FidL15 = [0.98680770,0.99310958]
-FCparamsL15 = [249,573,1691,7821,46551,1113089]
-# Physical NN fidelity threshold 1e-3 
-Kernals = [2,2,2,4,5,6,7,8] #[2,3,3,4,5,7,9]
-Dhidden = [2,3,4,5,6,6,7,8] #[4,4,6,8,8,12,16]
-Physicalparams = [37,64,97,176,253,289,386,497] #[81,105,181,305,353,697,1153]
-PhysicalFids = [0.9999298453330994,0.9996610879898072,0.9991247057914734,0.9988309144973756,0.99885493516922,0.9986146092414856,0.9980713725090028,0.989775776863098] 
-#[0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
-RelativeEerrors = [1.67e-4,3.86e-4,5.54e-4,9.96e-4,8.85e-4,7.67e-4,9.51e-4,1.35e-2]
-# Physical NN fidelity threshold 1e-2
-# Kernals = [2,2,2,2]
-# Dhidden = [2,2,2,4]
-# Physicalparams = [37,41,45,105]
-# PhysicalFids = [0.99992979,0.99958485,0.99851441,0.99759948]
-# Physical NN relative energy error 1e-3
-Kernals2 = [2,3,4,4,5,5]
-Dhidden2 = [14,16,18,20,20,22]
-Physicalparams2 = [421,609,829,1001,1121,1321]
-PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
-PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
+# # Final plot system size scaling, t2=0.5, J2=0.9
+# Ls = [5,7,9,11,13,15,17,19]
+# # cutoff 1e-12
+# Chis = [8,19,38,54,75,91,99,107]
+# MPSparams = [64,298,1204,3288,7556,13344,20915,29821]
+# Gaps = [1.0362295913002155,0.7292629978716909,0.5074722973133694,0.3711837290202986,
+#         0.2823491878517128,0.22155926848028606,0.1782730095235543,0.1464246152814095]
+# GapsExact = [1.036483828388874,0.7273239046083431,0.5070419481698378,0.37144298233760065,
+#              0.28293164164842644,0.22228443045130675,0.17904748620487787,0.14719909087218674]
+# # cutoff min 1- fidelity 1e-2 (10 runs), lr = 1e-3, relu, epoch 10000 or avg loss < 1e-7
+# FChiddim = [8,13,26,68,190,512]
+# FCparams = [249,573,1691,7821,46551,1113089] #294401]
+# FChidL15 = [512,1024]
+# FCparamL15 = [294401, 1113089]
+# FidL15 = [0.98680770,0.99310958]
+# FCparamsL15 = [249,573,1691,7821,46551,1113089]
+# # Physical NN fidelity threshold 1e-3 
+# Kernals = [2,2,2,4,5,6,7,8] #[2,3,3,4,5,7,9]
+# Dhidden = [2,3,4,5,6,6,7,8] #[4,4,6,8,8,12,16]
+# Physicalparams = [37,64,97,176,253,289,386,497] #[81,105,181,305,353,697,1153]
+# PhysicalFids = [0.9999298453330994,0.9996610879898072,0.9991247057914734,0.9988309144973756,0.99885493516922,0.9986146092414856,0.9980713725090028,0.989775776863098] 
+# #[0.99999667,0.99950284,0.99936825,0.99900764,0.99897051,0.99835217,0.99843025]
+# RelativeEerrors = [1.67e-4,3.86e-4,5.54e-4,9.96e-4,8.85e-4,7.67e-4,9.51e-4,1.35e-2]
+# # Physical NN fidelity threshold 1e-2
+# # Kernals = [2,2,2,2]
+# # Dhidden = [2,2,2,4]
+# # Physicalparams = [37,41,45,105]
+# # PhysicalFids = [0.99992979,0.99958485,0.99851441,0.99759948]
+# # Physical NN relative energy error 1e-3
+# Kernals2 = [2,3,4,4,5,5]
+# Dhidden2 = [14,16,18,20,20,22]
+# Physicalparams2 = [421,609,829,1001,1121,1321]
+# PhysicalFids2 = [1.0,0.99979466,0.99906409,0.99846661,0.99561804533,0.99022579]
+# PhysicalRelEnErrs2 = [7.015047e-08,2.248334e-04,9.837634e-04,8.796741e-04,4.35e-04,3.231940e-03]
 
-coeffsnn = np.polyfit(Ls[:len(Physicalparams)], Physicalparams, deg=2)
-coeffsmps = np.polyfit(Ls[:len(MPSparams)], MPSparams, deg=4)
-#print("Fitted polynomial coefficients:", coeffsmps)
-poly_mps = np.poly1d(coeffsmps)
-x_fit = [5,7,9,11,13,15,17,19,21]  # Extend x values for extrapolation
-y_fit_mps = poly_mps(x_fit)
-poly_nn = np.poly1d(coeffsnn)
-y_fit_nn = poly_nn(x_fit)
-print(y_fit_nn)
+# coeffsnn = np.polyfit(Ls[:len(Physicalparams)], Physicalparams, deg=2)
+# coeffsmps = np.polyfit(Ls[:len(MPSparams)], MPSparams, deg=4)
+# #print("Fitted polynomial coefficients:", coeffsmps)
+# poly_mps = np.poly1d(coeffsmps)
+# x_fit = [5,7,9,11,13,15,17,19,21]  # Extend x values for extrapolation
+# y_fit_mps = poly_mps(x_fit)
+# poly_nn = np.poly1d(coeffsnn)
+# y_fit_nn = poly_nn(x_fit)
+# print(y_fit_nn)
 
-if __name__ == "__main__":
-    fig, ax1 = plt.subplots(figsize=(6*0.9,4*0.9))
+# if __name__ == "__main__":
+#     fig, ax1 = plt.subplots(figsize=(6*0.9,4*0.9))
 
-    # left axis: 1 - Fidelity (log scale)
-    # line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
-    # ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
-    line = ax1.plot(Ls[:len(Physicalparams)], Physicalparams, 'x', label=r'VBS NN') 
-    ax1.plot(x_fit, y_fit_nn, '--', label=None, color=line[0].get_color())
-    ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
-    #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
-    line = ax1.plot(Ls[:len(MPSparams)], MPSparams, '^', label=r'MPS')
-    ax1.plot(x_fit, y_fit_mps, '--', color=line[0].get_color(), label=None)
-    ax1.set_xlabel(r'$L$')
-    ax1.set_ylabel(r'Number of parameters')
-    ax1.set_yscale('log')
-    ax1.set_xlim(4, 20)
-    ax1.grid(False)
-    ax1.legend(loc='upper right')
-    # right axis: gap size scaling
-    ax2 = ax1.twinx()
-     # black color
-    ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
-    ax2.set_ylabel(r'many-body gap $\Delta$')
-    ax2.legend(loc='lower center')
-    ax2.set_yscale('log')
-    #ax2.set_ylim(0, 160)  
-    plt.tight_layout()
-    outname = '/Users/angkunwu/Desktop/scalingLs.png'
-    plt.savefig(outname, dpi=300)
-    plt.show()
+#     # left axis: 1 - Fidelity (log scale)
+#     # line = ax1.plot(Ls[:len(Physicalparams2)], Physicalparams2, '-x', label=r'VBS NN')
+#     # ax1.plot(Ls[:len(Physicalparams)], Physicalparams, '--x', label=None, color=line[0].get_color()) 
+#     line1 = ax1.plot(Ls[:len(Physicalparams)], Physicalparams, 'x', label=r'VBS NN') 
+#     ax1.plot(x_fit, y_fit_nn, '--', label=None, color=line1[0].get_color())
+#     ax1.plot(Ls[:len(FCparams)], FCparams, '-s', label=r'FCNN')
+#     #ax1.plot(Ls[:len(FCparamsL15)], FCparamsL15, 's', color='C1', linestyle='--', label=None)
+#     line2 = ax1.plot(Ls[:len(MPSparams)], MPSparams, '^', label=r'MPS')
+#     ax1.plot(x_fit, y_fit_mps, '--', color=line2[0].get_color(), label=None)
+#     ax1.set_xlabel(r'$L$')
+#     ax1.set_ylabel(r'Number of parameters')
+#     ax1.set_yscale('log')
+#     ax1.set_xlim(4, 20)
+#     ax1.grid(False)
+#     ax1.legend(loc='upper right')
+#     # annotate approximate scaling near each fitted curve
+#     x_nn_anno = 16
+#     x_mps_anno = 14
+#     ax1.text(
+#         x_nn_anno,
+#         poly_nn(x_nn_anno) * 1.50,   # multiplicative offset works better on log y-axis
+#         rf'VBS $\sim L^{{{len(coeffsnn)-1}}}$',
+#         color=line1[0].get_color(),
+#         fontsize=12
+#     )
+#     ax1.text(
+#         x_mps_anno,
+#         poly_mps(x_mps_anno) * 0.5,
+#         rf'MPS $\sim L^{{{len(coeffsmps)-1}}}$',
+#         color=line2[0].get_color(),
+#         fontsize=12
+#     )
+#     # right axis: gap size scaling
+#     ax2 = ax1.twinx()
+#      # black color
+#     ax2.plot(Ls, Gaps, marker='o', color='black',linestyle='--',label=r'$\Delta$') # black color
+#     ax2.set_ylabel(r'many-body gap $\Delta$')
+#     ax2.legend(loc='lower center')
+#     ax2.set_yscale('log')
+#     #ax2.set_ylim(0, 160)  
+#     plt.tight_layout()
+#     outname = '/Users/angkunwu/Desktop/scalingLs.png'
+#     plt.savefig(outname, dpi=1000)
+#     plt.show()
 
 
 
 
 # VMC non-exact case
-# Ls = [11,21,31] #[11,15,21] 
-# DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
-# t2 = 0.5
-# E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
-# Samples = [64*128, 128*128, 128*128] # 64*128
-# J1 = 0.1
-# J2 = 0.09
+Ls = [11,21,31] #[11,15,21] 
+DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
+t2 = 0.5
+E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
+Samples = [64*128, 128*128, 128*128] # 64*128
+J1 = 0.1
+J2 = 0.09
 
-# Es_all = []
-# Errs = []
-# hidds = [32,32,32]
-# for L, hidden_dim in zip(Ls, hidds):
-# 	#if L != 31:
-# 	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
-# 	#else:
-# 		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
-# 	Es = pd.read_csv(csv_path)['Energy'].values
-# 	err = pd.read_csv(csv_path)['Error'].values
-# 	Es_all.append(Es)
-# 	Errs.append(err)
+Es_all = []
+Errs = []
+hidds = [32,32,32]
+for L, hidden_dim in zip(Ls, hidds):
+	#if L != 31:
+	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
+	#else:
+		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
+	Es = pd.read_csv(csv_path)['Energy'].values
+	err = pd.read_csv(csv_path)['Error'].values
+	Es_all.append(Es)
+	Errs.append(err)
 
-# #xs = np.arange(len(Es_all[0])) * 20 
-# plt.figure(figsize=(6*0.8,4*0.8))
-# for k in range(len(Ls)):
-# 	mantissa, exponent = f"{DHs[k]:.2e}".split("e")
-# 	label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
-# 	#label = r"$L=%d,\ D_H=%.2e,\ E_{\mathrm{exact}}=%.3f$" % (Ls[k], DHs[k], E_exact[k])
-# 	#line, = plt.plot(np.arange(len(Es_all[k])),Es_all[k], '-o', label=label)
-# 	inds = np.arange(0, len(Es_all[k]), 1)
-# 	line = plt.errorbar(
-#         inds, #np.arange(len(Es_all[k][inds])),
-#         Es_all[k][inds],
-#         yerr=Errs[k][inds],          # per-point vertical error bars
-#         fmt='-o',              # line + circle markers
-#         capsize=2,             # little cap on bar ends
-#         elinewidth=1,markersize=3,label=label
-#         )
-# 	plt.axhline(E_exact[k], color=line[0].get_color(), linestyle='--')
-# plt.xlabel(r'VMC Step')
-# plt.ylabel(r'Energy')
-# plt.legend(loc='best')
-# #plt.title(r'$J_1=0.1,\ J_2=0.09$')
-# plt.xlim(0,200)
-# #plt.xlim(0, len(Es_all[0])*20)
-# plt.grid(False)
-# plt.tight_layout()
-# outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
-# plt.savefig(outname, dpi=300)
-# plt.show()
+fig, ax = plt.subplots(figsize=(6*0.8, 4*0.8), constrained_layout=True)
+
+colors = []
+for k in range(len(Ls)):
+    mantissa, exponent = f"{DHs[k]:.2e}".split("e")
+    label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
+
+    inds = np.arange(0, len(Es_all[k]), 1)
+    line = ax.errorbar(
+        inds,
+        Es_all[k][inds],
+        yerr=Errs[k][inds],
+        fmt='-o',
+        capsize=2,
+        elinewidth=0.4,
+        markersize=1,
+        linewidth=1,
+        label=label,
+    )
+    c = line[0].get_color()
+    colors.append(c)
+    ax.axhline(E_exact[k], color=c, linestyle='--')
+
+ax.set_xlabel(r'VMC Step')
+ax.set_ylabel(r'Energy')
+ax.legend(loc='best')
+ax.set_xlim(0, 200)
+ax.grid(False)
+
+# Inset for late-step convergence
+axins = ax.inset_axes([0.50, 0.24, 0.45, 0.40], transform=ax.transAxes)
+
+# Zoom to last 25% of available steps
+x_max = min(np.arange(0, len(e), 1)[-1] for e in Es_all)
+x_min = int(0.75 * x_max)
+
+yvals = []
+for k in range(len(Ls)):
+    inds = np.arange(0, len(Es_all[k]), 1)
+    mask = (inds >= x_min) & (inds <= x_max)
+    xk = inds[mask]
+    yk = Es_all[k][inds][mask]
+
+    axins.plot(xk, yk, '-o', color=colors[k], markersize=2, linewidth=1)
+    axins.axhline(E_exact[k], color=colors[k], linestyle='--', linewidth=1)
+
+    if len(yk) > 0:
+        yvals.extend(yk.tolist())
+    yvals.append(E_exact[k])
+
+axins.set_xlim(x_min, x_max)
+if len(yvals) > 0:
+    ymin, ymax = min(yvals), max(yvals)
+    pad = max(1e-5, 0.08 * (ymax - ymin))
+    axins.set_ylim(ymin - pad, ymax + pad)
+
+axins.tick_params(labelsize=8)
+mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", lw=0.8)
+
+outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
+plt.savefig(outname, dpi=1000)
+plt.show()
+
 
 # Plot comparison of different activations
 # csv_path = f"data/Loss_record_L16_J11.0_J21.0_hidden16_kernel2_activation_tanh_1.csv"
@@ -410,7 +500,7 @@ if __name__ == "__main__":
 # Loss_sigmoid = pd.read_csv(csv_path)['Loss'].values
 # fid_sigmoid = pd.read_csv(csv_path)['Fidelity'].values[0]
 
-# plt.figure(figsize=(6*0.9,4*0.9))
+# plt.figure(figsize=(6*0.9,5*0.9))
 # plt.plot(Loss_relu/NH, label=r'ReLU, $\mathrm{fidelity}$=%.7f' % fid_relu, linewidth=4)
 # plt.plot(Loss_sigmoid/NH, label=r'Sigmoid, $\mathrm{fidelity}$=%.7f' % fid_sigmoid)
 # plt.plot(Loss_tanh_1/NH, label=r'$\tanh(x)$, $\mathrm{fidelity}$=%.7f' % fid_tanh_1)
@@ -423,7 +513,16 @@ if __name__ == "__main__":
 # plt.legend(loc='center right', prop={'size': 9})
 # plt.yscale('log')
 # plt.grid(False)
-# plt.tight_layout()
+# plt.legend(
+#     loc='lower center',
+#     bbox_to_anchor=(0.5, 1.0),   # centered, just above axes
+#     ncol=2,                        # 2 columns -> 3 rows for 5 entries
+#     prop={'size': 10}, 
+#     frameon=False, 
+#     columnspacing=1.2, 
+#     handlelength=1.8
+# )
+# plt.tight_layout(rect=[0, 0, 1, 0.88])  # reserve top space for legend
 # outname = '/Users/angkunwu/Desktop/activation_comparison.png'
-# plt.savefig(outname, dpi=300)
+# plt.savefig(outname, dpi=1000)
 # plt.show()
