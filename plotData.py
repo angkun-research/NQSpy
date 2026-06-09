@@ -187,117 +187,160 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 
 
 #L = 13, t2=0.5, t1=1.0, J1=1.0
-# J2s = np.arange(0.0, 2.1, 0.1)
-# energy_exact = [-7.1901227,-7.13896884,-7.09190063,-7.04943911,-7.01222739,-6.98107004,-6.95698550,
-# 				-6.94127144,-6.93557455,-6.94193570,-6.96274304,-7.00049120,-7.05729261,-7.13429925,
-# 				-7.23140870,-7.34746979,-7.48077040,-7.62945057,-7.79170748,-7.96585854,-8.15035697]
-# Chis = [83,79,76,77,81,81,81,82,82,75,3,88,104,114,126,134,143,145,145,150,153] # cutoff 1e-12
-# Fidelity_exact = [0.85429634,0.86922009,0.88480350,0.90104827,0.91789986,0.93519768,0.95258902,0.96938821,0.98436978,
-#                   0.99553181, 1.00000000-1e-10,0.99443839,0.97626674,0.94517119,0.90350522,0.85503800,0.80332282,0.75094885,
-#                   0.69963718,0.65057761,0.60464161]
-# energy_g0s = [-6.67400461,-6.70287845,-6.73175230,-6.76062614,-6.78949998,-6.81837382,-6.84724767,
-# 			  -6.87612151,-6.90499535,-6.93386919,-6.96274304,-6.99161688,-7.02049072,-7.04936456,
-# 			  -7.07823841,-7.10711225,-7.13598609,-7.16485993,-7.19373378,-7.22260762,-7.25148146]
-# Fidelity_k2h16 = [0.91926730,0.91996229,0.93300474,0.94077432,0.94977760,0.95924097,0.96948266,
-# 				  0.97981387,0.98925722,0.99689674,0.99992454,0.99596262,0.98026085,0.95935941,
-# 				  0.92744476,0.89017510,0.84971493,0.80809152,0.76644444,0.72621667,0.68725669]
-# 				#[0.84533238,0.85703021,0.88131058,0.88393199,0.90132892,0.91952372,0.93879968,0.97034514,0.97897542,
-#                  # 0.98395431,0.99999613,0.99129796,0.96539015,0.92030489,0.86048895,0.80265188,0.72119343,0.64492208,
-#                  # 0.60835588,0.52722341,0.47150242]
-# Energy_k2h16 = [-6.84317963,-6.73161808,-6.82938094,-6.82633955,-6.83518486,-6.84385350,-6.86099528,
-# 				-6.88176288,-6.90325768,-6.93379821,-6.96171269,-6.99080074,-6.97032321,-7.03861478,
-# 				-7.05321950,-7.07195153,-7.08570278,-7.09749929,-7.11021666,-7.12223065,-7.09694573]
-# Fidelity_k5h16 = [0.98176461,0.98364753,0.98526752,0.98591042,0.99102497,0.99328840,0.99227142,
-# 				  0.99619609,0.99681216,0.99901247,0.99999851,0.99898088,0.99414760,0.98588109,
-# 				  0.98684049,0.95892191,0.94360870,0.94798779,0.93801236,0.95167345,0.88379383]
-# 				#[0.99329001,0.96445382,0.96489578,0.96582770,0.97432876,0.97762477,0.98422825,0.98931849,0.99403274,
-#                   #0.99794006,0.99997854,0.99692392,0.98586422,0.98796952,0.98777372,0.97808599,0.92674130,0.92714155,
-#                   #0.93647653,0.91792113,0.79480302]
-# Energy_k5h16 = [-7.08018005,-7.04077655,-7.00833531,-6.97166447,-6.96214250,-6.93996633,-6.91809991,
-# 				-6.91579423,-6.92086307,-6.93722827,-6.96272788,-6.99551251,-7.03262952,-7.07546137,
-# 				-7.16092892,-7.19680205,-7.23606932,-7.31984024,-7.48264414,-7.67804192,-7.56657789]
-# Fidelity_k5h64 = [0.99780947,0.99768931,0.99640191,0.99723196,0.99740493,0.99772334,0.99711430,
-# 				  0.99770784,0.99886894,0.99968469,0.99999744,0.99956775,0.99851853,0.99833834,
-# 				  0.99737966,0.99568617,0.99469191,0.99481761,0.99422348,0.98841441,0.99013722]
-# 				#[0.99715596,0.99452996,0.99693811,0.99748856,0.99633789,0.99677116,0.99773496,0.99893361,0.99869370,
-#                   #0.99965948,0.99999875,0.99929082,0.99820292,0.99865788,0.99777848,0.99333668,0.99503058,0.99408579,
-#                   #0.98930866,0.99189758,0.98635614]
-# Energy_k5h64 = [-7.16688696,-7.11431766,-7.06134645,-7.02521658,-6.99025724,-6.96168551,-6.93558581,
-# 				-6.92661763,-6.92804576,-6.93924030,-6.96270691,-6.99659216,-7.04700743,-7.12006243,
-# 				-7.20549473,-7.30925557,-7.43274075,-7.57752999,-7.70590820,-7.82210964,-8.04075694]
+J2s = np.arange(0.0, 2.1, 0.1)
+energy_exact = [-7.1901227,-7.13896884,-7.09190063,-7.04943911,-7.01222739,-6.98107004,-6.95698550,
+				-6.94127144,-6.93557455,-6.94193570,-6.96274304,-7.00049120,-7.05729261,-7.13429925,
+				-7.23140870,-7.34746979,-7.48077040,-7.62945057,-7.79170748,-7.96585854,-8.15035697]
+Chis = [83,79,76,77,81,81,81,82,82,75,3,88,104,114,126,134,143,145,145,150,153] # cutoff 1e-12
+Fidelity_exact = [0.85429634,0.86922009,0.88480350,0.90104827,0.91789986,0.93519768,0.95258902,0.96938821,0.98436978,
+                  0.99553181, 1.00000000-1e-10,0.99443839,0.97626674,0.94517119,0.90350522,0.85503800,0.80332282,0.75094885,
+                  0.69963718,0.65057761,0.60464161]
+energy_g0s = [-6.67400461,-6.70287845,-6.73175230,-6.76062614,-6.78949998,-6.81837382,-6.84724767,
+			  -6.87612151,-6.90499535,-6.93386919,-6.96274304,-6.99161688,-7.02049072,-7.04936456,
+			  -7.07823841,-7.10711225,-7.13598609,-7.16485993,-7.19373378,-7.22260762,-7.25148146]
+Fidelity_k2h16 = [0.91926730,0.91996229,0.93300474,0.94077432,0.94977760,0.95924097,0.96948266,
+				  0.97981387,0.98925722,0.99689674,0.99992454,0.99596262,0.98026085,0.95935941,
+				  0.92744476,0.89017510,0.84971493,0.80809152,0.76644444,0.72621667,0.68725669]
+				#[0.84533238,0.85703021,0.88131058,0.88393199,0.90132892,0.91952372,0.93879968,0.97034514,0.97897542,
+                 # 0.98395431,0.99999613,0.99129796,0.96539015,0.92030489,0.86048895,0.80265188,0.72119343,0.64492208,
+                 # 0.60835588,0.52722341,0.47150242]
+Energy_k2h16 = [-6.84317963,-6.73161808,-6.82938094,-6.82633955,-6.83518486,-6.84385350,-6.86099528,
+				-6.88176288,-6.90325768,-6.93379821,-6.96171269,-6.99080074,-6.97032321,-7.03861478,
+				-7.05321950,-7.07195153,-7.08570278,-7.09749929,-7.11021666,-7.12223065,-7.09694573]
+Fidelity_k5h16 = [0.98176461,0.98364753,0.98526752,0.98591042,0.99102497,0.99328840,0.99227142,
+				  0.99619609,0.99681216,0.99901247,0.99999851,0.99898088,0.99414760,0.98588109,
+				  0.98684049,0.95892191,0.94360870,0.94798779,0.93801236,0.95167345,0.88379383]
+				#[0.99329001,0.96445382,0.96489578,0.96582770,0.97432876,0.97762477,0.98422825,0.98931849,0.99403274,
+                  #0.99794006,0.99997854,0.99692392,0.98586422,0.98796952,0.98777372,0.97808599,0.92674130,0.92714155,
+                  #0.93647653,0.91792113,0.79480302]
+Energy_k5h16 = [-7.08018005,-7.04077655,-7.00833531,-6.97166447,-6.96214250,-6.93996633,-6.91809991,
+				-6.91579423,-6.92086307,-6.93722827,-6.96272788,-6.99551251,-7.03262952,-7.07546137,
+				-7.16092892,-7.19680205,-7.23606932,-7.31984024,-7.48264414,-7.67804192,-7.56657789]
+Fidelity_k5h64 = [0.99780947,0.99768931,0.99640191,0.99723196,0.99740493,0.99772334,0.99711430,
+				  0.99770784,0.99886894,0.99968469,0.99999744,0.99956775,0.99851853,0.99833834,
+				  0.99737966,0.99568617,0.99469191,0.99481761,0.99422348,0.98841441,0.99013722]
+				#[0.99715596,0.99452996,0.99693811,0.99748856,0.99633789,0.99677116,0.99773496,0.99893361,0.99869370,
+                  #0.99965948,0.99999875,0.99929082,0.99820292,0.99865788,0.99777848,0.99333668,0.99503058,0.99408579,
+                  #0.98930866,0.99189758,0.98635614]
+Energy_k5h64 = [-7.16688696,-7.11431766,-7.06134645,-7.02521658,-6.99025724,-6.96168551,-6.93558581,
+				-6.92661763,-6.92804576,-6.93924030,-6.96270691,-6.99659216,-7.04700743,-7.12006243,
+				-7.20549473,-7.30925557,-7.43274075,-7.57752999,-7.70590820,-7.82210964,-8.04075694]
 
-# energy_exact = np.array(energy_exact)
-# energy_g0s = np.array(energy_g0s)
-# Energy_k2h16 = np.array(Energy_k2h16)
-# Energy_k5h16 = np.array(Energy_k5h16)
-# Energy_k5h64 = np.array(Energy_k5h64)
+energy_exact = np.array(energy_exact)
+energy_g0s = np.array(energy_g0s)
+Energy_k2h16 = np.array(Energy_k2h16)
+Energy_k5h16 = np.array(Energy_k5h16)
+Energy_k5h64 = np.array(Energy_k5h64)
 
-# if __name__ == "__main__":
-#     # fig, ax1 = plt.subplots(figsize=(6,4))
+if __name__ == "__main__":
+    # fig, ax1 = plt.subplots(figsize=(6,4))
 
-#     # # left axis: 1 - Fidelity (log scale)
-#     # ax1.plot(J2s, 1 - np.array(Fidelity_exact), '-o', label=r'WF at $J_1=J_2=0$')
-#     # ax1.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s', label=r'kernel$=2,D_{hid}=16$')
-#     # ax1.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^', label=r'kernel$=5,D_{hid}=16$')
-#     # ax1.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x', label=r'kernel$=5,D_{hid}=64$')
-#     # ax1.set_xlabel(r'$J_2$')
-#     # ax1.set_ylabel(r'1 - $|\langle \Psi_{\mathrm{ed}}|\Psi_{\mathrm{test}}\rangle|$')
-#     # ax1.set_yscale('log')
-#     # ax1.set_ylim(1e-5, 0.6)  # Adjust y-axis limits for better visualization
-#     # ax1.grid(False)
-#     # ax1.legend(loc='lower left')
-#     # # right axis: Chis (bond dimension)
-#     # ax2 = ax1.twinx()
-#     #  # black color
-#     # ax2.plot(J2s, Chis, marker='o', color='black',linestyle='--',label=r'DMRG cutoff $10^{-12}$') # black color
-#     # ax2.set_ylabel(r'Bond dimension $\chi$')
-#     # ax2.legend(loc='lower right')
-#     # ax2.set_ylim(0, 160)  
-#     # plt.tight_layout()
-#     # # outname = '/Users/angkunwu/Desktop/nonexactJs.png'
-#     # # plt.savefig(outname, dpi=300)
-#     # plt.show()
+    # # left axis: 1 - Fidelity (log scale)
+    # ax1.plot(J2s, 1 - np.array(Fidelity_exact), '-o', label=r'WF at $J_1=J_2=0$')
+    # ax1.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s', label=r'kernel$=2,D_{hid}=16$')
+    # ax1.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^', label=r'kernel$=5,D_{hid}=16$')
+    # ax1.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x', label=r'kernel$=5,D_{hid}=64$')
+    # ax1.set_xlabel(r'$J_2$')
+    # ax1.set_ylabel(r'1 - $|\langle \Psi_{\mathrm{ed}}|\Psi_{\mathrm{test}}\rangle|$')
+    # ax1.set_yscale('log')
+    # ax1.set_ylim(1e-5, 0.6)  # Adjust y-axis limits for better visualization
+    # ax1.grid(False)
+    # ax1.legend(loc='lower left')
+    # # right axis: Chis (bond dimension)
+    # ax2 = ax1.twinx()
+    #  # black color
+    # ax2.plot(J2s, Chis, marker='o', color='black',linestyle='--',label=r'DMRG cutoff $10^{-12}$') # black color
+    # ax2.set_ylabel(r'Bond dimension $\chi$')
+    # ax2.legend(loc='lower right')
+    # ax2.set_ylim(0, 160)  
+    # plt.tight_layout()
+    # # outname = '/Users/angkunwu/Desktop/nonexactJs.png'
+    # # plt.savefig(outname, dpi=300)
+    # plt.show()
 
-# 	fig, (ax_top, ax_mid, ax_bot) = plt.subplots(
-#     	nrows=3, sharex=True, figsize=(6,6), gridspec_kw={'height_ratios': [1, 2, 2]}
-# 	)
+    fig, (ax_top, ax_mid, ax_bot) = plt.subplots(
+    	nrows=3, sharex=True, figsize=(6,6), gridspec_kw={'height_ratios': [1, 2, 2]}
+	)
 
-# 	# top: Bond dimension (linear)
-# 	ax_top.plot(J2s, Chis, marker='o', color='black', linestyle='--',
-#             label=r'DMRG cutoff $10^{-12}$')
-# 	ax_top.set_ylabel(r'Bond $\chi$')
-# 	ax_top.legend(loc='center left')
-# 	ax_top.set_yscale('log')
-# 	ax_top.set_ylim(1, 200)
-# 	ax_top.set_xlim(-0.02, 2.02)
-# 	ax_top.axhline(y=3, color='red', linestyle='--')
-# 	ax_top.grid(False)
+	# top: Bond dimension (linear)
+    ax_top.plot(J2s, Chis, marker='o', color='black', linestyle='--',
+                label=r'DMRG cutoff $10^{-12}$')
+    ax_top.set_ylabel(r'Bond $\chi$')
+    ax_top.legend(loc='center left')
+    ax_top.set_yscale('log')
+    ax_top.set_ylim(1, 200)
+    ax_top.set_xlim(-0.02, 2.02)
+    ax_top.axhline(y=3, color='red', linestyle='--')
+    ax_top.grid(False)
 
-# 	# middle: 1 - Fidelity (log scale)
-# 	line1 = ax_mid.plot(J2s, 1 - np.array(Fidelity_exact), '-o',label=r'WF at $J_1=J_2=0$')
-# 	line2 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k2h16), '-s',label=r'kernel$=2,D_\mathrm{hidden}=16$')
-# 	line3 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h16), '-^',label=r'kernel$=5,D_\mathrm{hidden}=16$')
-# 	line4 = ax_mid.plot(J2s, 1 - np.array(Fidelity_k5h64), '-x',label=r'kernel$=5,D_\mathrm{hidden}=64$')
-# 	ax_mid.set_ylabel(r'1 - $\left |\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{test}}\rangle\right|$')
-# 	ax_mid.set_yscale('log')
-# 	ax_mid.set_ylim(1e-5, 0.6)
-# 	ax_mid.legend(loc='lower right', fontsize=9)
-# 	ax_mid.grid(False)
-# 	# bottom: Energy error (log scale)
-# 	ax_bot.plot(J2s, (energy_g0s - energy_exact) / np.abs(energy_exact), '-o', color=line1[0].get_color())
-# 	ax_bot.plot(J2s, (Energy_k2h16 - energy_exact) / np.abs(energy_exact), '-s', color=line2[0].get_color())
-# 	ax_bot.plot(J2s, (Energy_k5h16 - energy_exact) / np.abs(energy_exact), '-^', color=line3[0].get_color())
-# 	ax_bot.plot(J2s, (Energy_k5h64 - energy_exact) / np.abs(energy_exact), '-x', color=line4[0].get_color())
-# 	ax_bot.set_ylabel(r'$(E - E_{\mathrm{exact}}) / |E_{\mathrm{exact}}|$')
-# 	ax_bot.set_yscale('log')
-# 	ax_bot.set_ylim(1e-5, 0.2)
-# 	ax_bot.set_xlabel(r'$J_2$')
+	# middle: 1 - Fidelity (log scale)
+    y_exact = 1 - np.array(Fidelity_exact)
+    y_k2h16 = 1 - np.array(Fidelity_k2h16)
+    y_k5h16 = 1 - np.array(Fidelity_k5h16)
+    y_k5h64 = 1 - np.array(Fidelity_k5h64)
 
-# 	plt.subplots_adjust(hspace=0.08)  # tighten vertical spacing
-# 	plt.tight_layout()
-# 	outname = '/Users/angkunwu/Desktop/nonexactJs.png'
-# 	plt.savefig(outname, dpi=1000)
-# 	plt.show()
+    line1 = ax_mid.plot(J2s, y_exact, '-o', label=r'WF at $J_1=J_2=0$')
+    line2 = ax_mid.plot(J2s, y_k2h16, '-s', label=r'kernel$=2,D_\mathrm{hidden}=16$')
+    line3 = ax_mid.plot(J2s, y_k5h16, '-^', label=r'kernel$=5,D_\mathrm{hidden}=16$')
+    line4 = ax_mid.plot(J2s, y_k5h64, '-x', label=r'kernel$=5,D_\mathrm{hidden}=64$')
+    ax_mid.set_ylabel(r'1 - $\left |\langle \Psi_{\mathrm{ED}}|\Psi_{\mathrm{test}}\rangle\right|$')
+    ax_mid.set_yscale('log')
+    ax_mid.set_ylim(1e-5, 0.6)
+    ax_mid.grid(False)
+
+    # inset in middle: x = |J2 - 1|, each original curve -> two branches (J2<=1 and J2>=1)
+    #axins = inset_axes(ax_mid, width="46%", height="46%", loc='upper left', borderpad=1.0)
+    axins = ax_mid.inset_axes([0.63, 0.2, 0.35, 0.25]) # [x0, y0, w, h] in parent-axes fraction (0 to 1)
+
+    def plot_split_absJ2(ax, x, y, color, marker):
+        left = x <= 1.0
+        right = x >= 1.0
+
+        xl = np.abs(x[left] - 1.0)
+        yl = y[left]
+        xr = np.abs(x[right] - 1.0)
+        yr = y[right]
+
+        il = np.argsort(xl)
+        ir = np.argsort(xr)
+
+        ax.plot(xl[il], yl[il], '-', color=color, marker=marker, markersize=3, linewidth=1)
+        ax.plot(xr[ir], yr[ir], '--', color=color, marker=marker, markersize=3, linewidth=1)
+
+    #plot_split_absJ2(axins, J2s, y_exact, line1[0].get_color(), 'o')
+    plot_split_absJ2(axins, J2s, y_k2h16, line2[0].get_color(), 's')
+    #plot_split_absJ2(axins, J2s, y_k5h16, line3[0].get_color(), '^')
+    plot_split_absJ2(axins, J2s, y_k5h64, line4[0].get_color(), 'x')
+
+    axins.set_xlabel(r'$|J_2 - J_1|/J_1$', fontsize=8)
+    axins.set_yscale('log')
+    axins.set_ylim(1e-5, 0.6)
+    axins.set_xlim(-0.02, 1.02)
+    axins.tick_params(labelsize=8)
+    axins.grid(False)
+
+    # bottom: Energy error (log scale)
+    ax_bot.plot(J2s, (energy_g0s - energy_exact) / np.abs(energy_exact), '-o', color=line1[0].get_color(),
+            label=r'WF at $J_1=J_2=0$')
+    ax_bot.plot(J2s, (Energy_k2h16 - energy_exact) / np.abs(energy_exact), '-s', color=line2[0].get_color(),
+            label=r'kernel$=2,D_\mathrm{hidden}=16$')
+    ax_bot.plot(J2s, (Energy_k5h16 - energy_exact) / np.abs(energy_exact), '-^', color=line3[0].get_color(),
+            label=r'kernel$=5,D_\mathrm{hidden}=16$')
+    ax_bot.plot(J2s, (Energy_k5h64 - energy_exact) / np.abs(energy_exact), '-x', color=line4[0].get_color(),
+            label=r'kernel$=5,D_\mathrm{hidden}=64$')
+    ax_bot.set_ylabel(r'$(E - E_{\mathrm{exact}}) / |E_{\mathrm{exact}}|$')
+    ax_bot.set_yscale('log')
+    ax_bot.set_ylim(1e-5, 0.2)
+    ax_bot.set_xlabel(r'$J_2$')
+
+    # move legend from middle plot to bottom plot
+    ax_bot.legend(loc='lower right', fontsize=9)
+
+    plt.subplots_adjust(hspace=0.08)  # tighten vertical spacing
+    plt.tight_layout()
+    outname = '/Users/angkunwu/Desktop/nonexactJs.png'
+    plt.savefig(outname, dpi=1000)
+    plt.show()
 
 
 # # Final plot system size scaling, t2=0.5, J2=0.9
@@ -396,90 +439,90 @@ plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 
 
 
-# VMC non-exact case
-Ls = [11,21,31] #[11,15,21] 
-DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
-t2 = 0.5
-E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
-Samples = [64*128, 128*128, 128*128] # 64*128
-J1 = 0.1
-J2 = 0.09
+# # VMC non-exact case
+# Ls = [11,21,31] #[11,15,21] 
+# DHs = [2772,3879876,4.81e+9] #[2772,51480,3879876]
+# t2 = 0.5
+# E_exact = [-2.80219475,-3.26788669,-3.66565952]#[-2.80219475, -3.00731899, -3.26788669]
+# Samples = [64*128, 128*128, 128*128] # 64*128
+# J1 = 0.1
+# J2 = 0.09
 
-Es_all = []
-Errs = []
-hidds = [32,32,32]
-for L, hidden_dim in zip(Ls, hidds):
-	#if L != 31:
-	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
-	#else:
-		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
-	Es = pd.read_csv(csv_path)['Energy'].values
-	err = pd.read_csv(csv_path)['Error'].values
-	Es_all.append(Es)
-	Errs.append(err)
+# Es_all = []
+# Errs = []
+# hidds = [32,32,32]
+# for L, hidden_dim in zip(Ls, hidds):
+# 	#if L != 31:
+# 	csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5.csv"
+# 	#else:
+# 		#csv_path = f"data/energy_error_nonexact_L{L}_t2{t2}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel5_sam16384_epoch200.csv"
+# 	Es = pd.read_csv(csv_path)['Energy'].values
+# 	err = pd.read_csv(csv_path)['Error'].values
+# 	Es_all.append(Es)
+# 	Errs.append(err)
 
-fig, ax = plt.subplots(figsize=(6*0.8, 4*0.8), constrained_layout=True)
+# fig, ax = plt.subplots(figsize=(6*0.8, 4*0.8), constrained_layout=True)
 
-colors = []
-for k in range(len(Ls)):
-    mantissa, exponent = f"{DHs[k]:.2e}".split("e")
-    label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
+# colors = []
+# for k in range(len(Ls)):
+#     mantissa, exponent = f"{DHs[k]:.2e}".split("e")
+#     label = rf"$L={Ls[k]},\ D_H={float(mantissa):.2f}\times 10^{{{int(exponent)}}},\ E_{{\mathrm{{exact}}}}={E_exact[k]:.3f}$"
 
-    inds = np.arange(0, len(Es_all[k]), 1)
-    line = ax.errorbar(
-        inds,
-        Es_all[k][inds],
-        yerr=Errs[k][inds],
-        fmt='-o',
-        capsize=2,
-        elinewidth=0.4,
-        markersize=1,
-        linewidth=1,
-        label=label,
-    )
-    c = line[0].get_color()
-    colors.append(c)
-    ax.axhline(E_exact[k], color=c, linestyle='--')
+#     inds = np.arange(0, len(Es_all[k]), 1)
+#     line = ax.errorbar(
+#         inds,
+#         Es_all[k][inds],
+#         yerr=Errs[k][inds],
+#         fmt='-o',
+#         capsize=2,
+#         elinewidth=0.4,
+#         markersize=1,
+#         linewidth=1,
+#         label=label,
+#     )
+#     c = line[0].get_color()
+#     colors.append(c)
+#     ax.axhline(E_exact[k], color=c, linestyle='--')
 
-ax.set_xlabel(r'VMC Step')
-ax.set_ylabel(r'Energy')
-ax.legend(loc='best')
-ax.set_xlim(0, 200)
-ax.grid(False)
+# ax.set_xlabel(r'VMC Step')
+# ax.set_ylabel(r'Energy')
+# ax.legend(loc='best')
+# ax.set_xlim(0, 200)
+# ax.grid(False)
 
-# Inset for late-step convergence
-axins = ax.inset_axes([0.50, 0.24, 0.45, 0.40], transform=ax.transAxes)
+# # Inset for late-step convergence
+# axins = ax.inset_axes([0.50, 0.24, 0.45, 0.40], transform=ax.transAxes)
 
-# Zoom to last 25% of available steps
-x_max = min(np.arange(0, len(e), 1)[-1] for e in Es_all)
-x_min = int(0.75 * x_max)
+# # Zoom to last 25% of available steps
+# x_max = min(np.arange(0, len(e), 1)[-1] for e in Es_all)
+# x_min = int(0.75 * x_max)
 
-yvals = []
-for k in range(len(Ls)):
-    inds = np.arange(0, len(Es_all[k]), 1)
-    mask = (inds >= x_min) & (inds <= x_max)
-    xk = inds[mask]
-    yk = Es_all[k][inds][mask]
+# yvals = []
+# for k in range(len(Ls)):
+#     inds = np.arange(0, len(Es_all[k]), 1)
+#     mask = (inds >= x_min) & (inds <= x_max)
+#     xk = inds[mask]
+#     yk = Es_all[k][inds][mask]
 
-    axins.plot(xk, yk, '-o', color=colors[k], markersize=2, linewidth=1)
-    axins.axhline(E_exact[k], color=colors[k], linestyle='--', linewidth=1)
+#     axins.plot(xk, yk, '-o', color=colors[k], markersize=2, linewidth=1)
+#     axins.axhline(E_exact[k], color=colors[k], linestyle='--', linewidth=1)
 
-    if len(yk) > 0:
-        yvals.extend(yk.tolist())
-    yvals.append(E_exact[k])
+#     if len(yk) > 0:
+#         yvals.extend(yk.tolist())
+#     yvals.append(E_exact[k])
 
-axins.set_xlim(x_min, x_max)
-if len(yvals) > 0:
-    ymin, ymax = min(yvals), max(yvals)
-    pad = max(1e-5, 0.08 * (ymax - ymin))
-    axins.set_ylim(ymin - pad, ymax + pad)
+# axins.set_xlim(x_min, x_max)
+# if len(yvals) > 0:
+#     ymin, ymax = min(yvals), max(yvals)
+#     pad = max(1e-5, 0.08 * (ymax - ymin))
+#     axins.set_ylim(ymin - pad, ymax + pad)
 
-axins.tick_params(labelsize=8)
-mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", lw=0.8)
+# axins.tick_params(labelsize=8)
+# mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", lw=0.8)
 
-outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
-plt.savefig(outname, dpi=1000)
-plt.show()
+# outname = '/Users/angkunwu/Desktop/vmc_nonexact.png'
+# plt.savefig(outname, dpi=1000)
+# plt.show()
 
 
 # Plot comparison of different activations
