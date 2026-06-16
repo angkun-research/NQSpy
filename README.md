@@ -1,7 +1,9 @@
 # NQSpy
+
+[![arXiv](https://img.shields.io/badge/arXiv-2606.17045-b31b1b.svg)](https://arxiv.org/abs/2606.17045)
+[Manuscript on arXiv (2606.17045)](https://arxiv.org/abs/2606.17045)
+
 Neural Network Quantum Many-body states under python
-
-
 
 
 # NQSpy
@@ -210,3 +212,7 @@ Typical outputs:
 - vmc_fullconfig.py currently exits early before optimization loop (contains an explicit exit call).
 - For large L, prefer on-the-fly local energies and batched samplers to avoid full Hilbert-space construction.
 
+## Citation and Paper
+
+The corresponding manuscript is available at:
+- [arXiv:2606.17045](https://arxiv.org/abs/2606.17045)

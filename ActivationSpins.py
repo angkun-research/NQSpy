@@ -89,7 +89,7 @@ hidden_dim= 16 #16 #64
 kernel_size= 2 #2 #5  
 stride=2
 activation = 'tanh' #'tanh'
-power = 5
+power = 7
 model = Class3States(in_channels=in_channels, hidden_dim=hidden_dim, kernel_size=kernel_size, stride=stride, activation=activation, power=power)
 
 n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -131,6 +131,6 @@ with torch.no_grad():
 import pandas as pd
 
 df = pd.DataFrame({'Loss': loss_record, 'Fidelity': fidelity, 'MSE': MSE, 'NH': len(y)})
-csv_path = f"data/Loss_record_L{L}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_activation_{activation}_{power}.csv"
+csv_path = f"data/Loss_record_L{L}_J1{J1}_J2{J2}_hidden{hidden_dim}_kernel{kernel_size}_activation_{activation}_{power}_2.csv"
 df.to_csv(csv_path, index=False)
 print(f"Saved loss record to {csv_path}")
