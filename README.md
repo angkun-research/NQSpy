@@ -1,4 +1,4 @@
-# NQSpy
+x# NQSpy
 
 [![arXiv](https://img.shields.io/badge/arXiv-2606.17045-b31b1b.svg)](https://arxiv.org/abs/2606.17045)
 
@@ -24,7 +24,6 @@ NQSpy studies doped spin systems (primarily one-hole chains) with state represen
 
 Core conventions are implemented in:
 - vmc_utils.py
-- ExactGS.py
 - ExactGS.py
 
 ## Installation
@@ -98,11 +97,6 @@ Note:
 
 References:
 - ExactGS.py
-- ExactGS.py
-- ExactGS.py
-- ExactGS.py
-- ExactGS.py
-- ExactGS.py
 
 ### VMC utilities API (vmc_utils.py)
 
@@ -141,15 +135,6 @@ Memory helper:
 
 References:
 - vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
-- vmc_utils.py
 
 ### Neural model API (NeuralNetworks.py)
 
@@ -173,11 +158,6 @@ Main reusable classes include:
 - LocalRule
 
 Reference:
-- NeuralNetworks.py
-- NeuralNetworks.py
-- NeuralNetworks.py
-- NeuralNetworks.py
-- NeuralNetworks.py
 - NeuralNetworks.py
 
 ## Script Workflows
