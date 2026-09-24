@@ -10,6 +10,11 @@ from typing import Optional
 import math
 
 from torch.func import vmap, jacrev, functional_call
+from vmc_utils_gpu import spin_tensor_to_onehot
+
+def model_device_dtype(model):
+    p = next(model.parameters())
+    return p.device, p.dtype
 
 # Neural network definition
 # fully connected
@@ -23,7 +28,8 @@ class FCNet(nn.Module):
 
     def forward(self, x):
         # x shape: (batch, L, 4)
-        x = x.view(x.shape[0], -1)  # flatten to (batch, 4*L)
+        #x = x.view(x.shape[0], -1)  # flatten to (batch, 4*L)
+        x = x.reshape(x.shape[0], -1)
         x = torch.tanh(self.fc1(x)) #torch.relu(self.fc1(x))
         x = torch.tanh(self.fc2(x))
         x = self.fc3(x)
@@ -41,7 +47,7 @@ def build_MB_basis(L):
             basis.append((hole, up_sites))
     return basis
 
-def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0):
+def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0,device=None, dtype=torch.float32):
     """
     Build the many-body Hamiltonian for the infinite-U Hubbard model.
     Args:
@@ -95,8 +101,8 @@ def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0):
                 if neighbor not in up_sites:
                     new_up_sites = up_sites
                     new_state = (neighbor, up_sites)
-                    if new_state == (0,(1,2)):
-                        print(idx, "Found it!", basis_dict[new_state])
+                    # if new_state == (0,(1,2)):
+                    #     print(idx, "Found it!", basis_dict[new_state])
                     H[idx, basis_dict[new_state]] -= t2*(-1) # sign factor for NNN hopping for many-body
                 else:
                     new_up_sites = tuple(sorted([s if s != neighbor else hole for s in up_sites]))
@@ -117,7 +123,9 @@ def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0):
                         flipped_state = (hole, flipped_up_sites)
                         H[idx, basis_dict[flipped_state]] += (J2 / 2.0) # S_i^+ S_j^- + S_i^- S_j^+ term
                
-    return H
+    if device is None:
+        return H
+    return torch.as_tensor(H, device=device, dtype=dtype)
 
 def build_Hamiltonian_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0):
     """
@@ -193,8 +201,16 @@ def build_Hamiltonian_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0):
                         j = basis_dict[flipped_state]
                         neighbors[idx].append((j, J2 / 2.0))  # off-diagonal term
 
-    neighbors_idx = [np.array([p[0] for p in row], dtype=np.int32) for row in neighbors]
-    neighbors_val = [np.array([p[1] for p in row], dtype=np.float64) for row in neighbors]
+    # neighbors_idx = [np.array([p[0] for p in row], dtype=np.int32) for row in neighbors]
+    # neighbors_val = [np.array([p[1] for p in row], dtype=np.float64) for row in neighbors]
+    neighbors_idx = [
+        torch.tensor([p[0] for p in row], dtype=torch.long, device=device)
+        for row in neighbors
+    ]
+    neighbors_val = [
+        torch.tensor([p[1] for p in row], dtype=dtype, device=device)
+        for row in neighbors
+    ]
     return neighbors_idx, neighbors_val
 
 def adjlist_to_csr(neighbors_idx, neighbors_val):
@@ -224,23 +240,66 @@ def adjlist_to_csr(neighbors_idx, neighbors_val):
     return sp.csr_matrix((data, (rows, cols)), shape=(nbasis, nbasis))
 
 
-def state_to_onehot(state, L):
-    """
-    Convert a basis state (hole, up_sites) to a (L, 4) one-hot array.
-    Channels: [hole, up, down, empty]
-    """
-    hole, up_sites = state
-    arr = np.zeros((L, 4), dtype=np.float32)
-    for i in range(L):
-        if i == hole:
-            arr[i, 0] = 1.0  # hole
-        elif i in up_sites:
-            arr[i, 1] = 1.0  # up
-        else:
-            arr[i, 2] = 1.0  # down
-    # Optional: mark empty (should be zero for this model)
-    arr[:, 3] = (arr.sum(axis=1) == 0).astype(np.float32)
-    return arr
+# def state_to_onehot(state, L):
+#     """
+#     Convert a basis state (hole, up_sites) to a (L, 4) one-hot array.
+#     Channels: [hole, up, down, empty]
+#     """
+#     hole, up_sites = state
+#     arr = np.zeros((L, 4), dtype=np.float32)
+#     for i in range(L):
+#         if i == hole:
+#             arr[i, 0] = 1.0  # hole
+#         elif i in up_sites:
+#             arr[i, 1] = 1.0  # up
+#         else:
+#             arr[i, 2] = 1.0  # down
+#     # Optional: mark empty (should be zero for this model)
+#     arr[:, 3] = (arr.sum(axis=1) == 0).astype(np.float32)
+#     return arr
+
+def states_to_onehot(states, L, *, device, dtype=torch.float32):
+    """Convert a list of (hole, up_sites) states directly to a Torch batch."""
+    batch_size = len(states)
+    x = torch.zeros(
+        (batch_size, L, 4),
+        device=device,
+        dtype=dtype,
+    )
+
+    # Initially mark every site as down.
+    x[:, :, 2] = 1.0
+
+    holes = torch.as_tensor(
+        [state[0] for state in states],
+        device=device,
+        dtype=torch.long,
+    )
+    rows = torch.arange(batch_size, device=device)
+
+    x[rows, holes, 2] = 0.0
+    x[rows, holes, 0] = 1.0
+
+    # Every state has the same number of up spins.
+    up_sites = torch.as_tensor(
+        [state[1] for state in states],
+        device=device,
+        dtype=torch.long,
+    )
+    up_rows = rows[:, None].expand_as(up_sites)
+
+    x[up_rows, up_sites, 2] = 0.0
+    x[up_rows, up_sites, 1] = 1.0
+
+    return x
+
+def state_to_onehot(state, L, *, device="cpu", dtype=torch.float32):
+    return states_to_onehot(
+        [state],
+        L,
+        device=torch.device(device),
+        dtype=dtype,
+    )[0]
 
 # Metropolis sampling
 def propose_move(state, L):
@@ -345,7 +404,7 @@ class CoeffAnsatz(nn.Module):
     def __init__(self, nbasis, complex=False, init_scale=0.1, device='cpu'):
         super().__init__()
         self.complex = complex
-        self.device = device
+        #self.device = device
         if self.complex:
             self.real = nn.Parameter(init_scale * torch.randn(nbasis, device=device))
             self.imag = nn.Parameter(init_scale * torch.randn(nbasis, device=device))
@@ -462,9 +521,14 @@ class PhysicalNN(nn.Module):
         x = self.pool(x).squeeze(-1)  # shape: (batch, hidden_dim)
         # add hole position encoding to flattened vector
         # make hole position one-hot vector
-        hole_vec = torch.zeros(batch_size, L, device=device)
+        #hole_vec = torch.zeros(batch_size, L, device=device)
+        hole_vec = torch.zeros(batch_size, L, device=device, dtype=x.dtype)
         if self.holewave:
-            hole_vec[torch.arange(batch_size), hole_idx] = 1.0
+            #hole_vec[torch.arange(batch_size), hole_idx] = 1.0
+            hole_vec[
+                torch.arange(batch_size, device=device),
+                hole_idx,
+            ] = 1.0
         x = torch.cat([x, hole_vec], dim=1)
         x = torch.tanh(self.fc1(x))  # shape: (batch, hidden_dim)
         x = self.finallayer(x)
@@ -482,8 +546,18 @@ def local_energy_from_adjlist(state, psi, basis, basis_dict, neighbors_idx, neig
     neighbors_idx[i], neighbors_val[i] are 1D numpy arrays for row i.
     """
     idx = basis_dict[state]
-    nbrs = neighbors_idx[idx]
-    vals = neighbors_val[idx]
+    # nbrs = neighbors_idx[idx]
+    # vals = neighbors_val[idx]
+    nbrs = torch.as_tensor(
+        neighbors_idx[idx],
+        device=device,
+        dtype=torch.long,
+    )
+    vals = torch.as_tensor(
+        neighbors_val[idx],
+        device=device,
+        dtype=psi_s.dtype,
+    )
 
     # get psi_s
     if hasattr(psi, "get_by_index"):
@@ -561,88 +635,269 @@ def find_state_coeff(L, state, tb_coeff):
 
 
 
-def local_energy_on_the_fly(state, psi, L, t1, t2, J1=0.0, J2=0.0, device='cpu'):
+# def local_energy_on_the_fly(state, psi, L, t1, t2, J1=0.0, J2=0.0):
+#     """
+#     Compute local energy for `state` by enumerating connected states on-the-fly
+#     (no global Hamiltonian / basis required). Returns a torch scalar on `device`.
+#     """
+#     model_device, model_dtype = model_device_dtype(psi)
+#     device = model_device
+#     dtype = model_dtype
+
+#     hole, up_sites = state
+#     up_sites = tuple(up_sites)
+#     # psi_s
+#     s_onehot = torch.tensor(state_to_onehot(state, L), dtype=torch.float32, device=device).unsqueeze(0)
+#     psi_s = psi(s_onehot)
+#     E_loc = torch.zeros(1, device=device, dtype=dtype)
+#     if psi_s.abs() < 1e-12:
+#         psi_s = torch.tensor(1e-12, device=device, dtype=dtype)
+
+#     # NN hopping: deltas -1, +1
+#     for delta in (-1, 1):
+#         nbr = hole + delta
+#         if 0 <= nbr < L:
+#             if nbr not in up_sites:
+#                 new_state = (nbr, up_sites)
+#             else:
+#                 new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+#                 new_state = (nbr, new_up)
+#             s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+#             psi_sp = psi(s_p_onehot)
+#             coeff = -t1
+#             E_loc = E_loc + coeff * (psi_sp / psi_s)
+
+#     # NNN hopping (same rule as build_Hamiltonian / adjlist): only when hole is even (hole % 2 == 0)
+#     if hole % 2 == 0:
+#         for delta in (-2, 2):
+#             nbr = hole + delta
+#             if 0 <= nbr < L:
+#                 if nbr not in up_sites:
+#                     new_state = (nbr, up_sites)
+#                 else:
+#                     new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+#                     new_state = (nbr, new_up)
+#                 s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+#                 psi_sp = psi(s_p_onehot)
+#                 coeff = -t2 * (-1)  # consistent with build_Hamiltonian / adjlist
+#                 E_loc = E_loc + coeff * (psi_sp / psi_s)
+
+#     # NN spin exchange (diagonal + possible off-diagonal flips)
+#     if J1 != 0.0:
+#         for site in range(L - 1):
+#             if site == hole or (site + 1) == hole:
+#                 continue
+#             spin_i = 1 if site in up_sites else -1
+#             spin_j = 1 if (site + 1) in up_sites else -1
+#             diag_coeff = (J1 / 4.0) * spin_i * spin_j
+#             E_loc = E_loc + diag_coeff  # diagonal term (ratio = 1)
+#             if spin_i != spin_j:
+#                 # construct flipped configuration
+#                 if spin_i == 1:
+#                     flipped_up = tuple(sorted([s if s != site else site + 1 for s in up_sites]))
+#                 else:
+#                     flipped_up = tuple(sorted([s if s != (site + 1) else site for s in up_sites]))
+#                 flipped_state = (hole, flipped_up)
+#                 s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+#                 psi_sp = psi(s_p_onehot)
+#                 E_loc = E_loc + (J1 / 2.0) * (psi_sp / psi_s)
+
+#     # NNN spin exchange (even sites only)
+#     if J2 != 0.0:
+#         for site in range(0, L - 2, 2):
+#             if site == hole or (site + 2) == hole:
+#                 continue
+#             spin_i = 1 if site in up_sites else -1
+#             spin_j = 1 if (site + 2) in up_sites else -1
+#             diag_coeff = (J2 / 4.0) * spin_i * spin_j
+#             E_loc = E_loc + diag_coeff
+#             if spin_i != spin_j:
+#                 if spin_i == 1:
+#                     flipped_up = tuple(sorted([s if s != site else site + 2 for s in up_sites]))
+#                 else:
+#                     flipped_up = tuple(sorted([s if s != (site + 2) else site for s in up_sites]))
+#                 flipped_state = (hole, flipped_up)
+#                 s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
+#                 psi_sp = psi(s_p_onehot)
+#                 E_loc = E_loc + (J2 / 2.0) * (psi_sp / psi_s)
+
+#     return E_loc
+
+def local_energy_on_the_fly(
+    state, psi, L, t1, t2,
+    J1=0.0, J2=0.0,
+):
     """
-    Compute local energy for `state` by enumerating connected states on-the-fly
-    (no global Hamiltonian / basis required). Returns a torch scalar on `device`.
+    Compute local energy by enumerating connected states on the fly.
+
+    All connected states are evaluated in one batched neural-network call.
+    Works on CPU or GPU. The model determines the actual device and dtype.
     """
+    # Use the model as the authoritative source of device and dtype.
+    parameter = next(psi.parameters())
+    model_device = parameter.device
+    model_dtype = parameter.dtype
+
     hole, up_sites = state
     up_sites = tuple(up_sites)
-    # psi_s
-    s_onehot = torch.tensor(state_to_onehot(state, L), dtype=torch.float32, device=device).unsqueeze(0)
-    psi_s = psi(s_onehot)
-    dtype = psi_s.dtype
-    E_loc = torch.zeros(1, device=device, dtype=dtype)
-    if psi_s.abs() < 1e-12:
-        psi_s = torch.tensor(1e-12, device=device, dtype=dtype)
 
-    # NN hopping: deltas -1, +1
+    connected_states = []
+    coefficients = []
+    diagonal_energy = 0.0
+
+    # ---------------------------------------------------------------
+    # NN hopping
+    # ---------------------------------------------------------------
     for delta in (-1, 1):
         nbr = hole + delta
+
         if 0 <= nbr < L:
             if nbr not in up_sites:
                 new_state = (nbr, up_sites)
             else:
-                new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+                new_up = tuple(
+                    sorted(
+                        hole if site == nbr else site
+                        for site in up_sites
+                    )
+                )
                 new_state = (nbr, new_up)
-            s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
-            psi_sp = psi(s_p_onehot)
-            coeff = -t1
-            E_loc = E_loc + coeff * (psi_sp / psi_s)
 
-    # NNN hopping (same rule as build_Hamiltonian / adjlist): only when hole is even (hole % 2 == 0)
+            connected_states.append(new_state)
+            coefficients.append(-t1)
+
+    # ---------------------------------------------------------------
+    # NNN hopping
+    # ---------------------------------------------------------------
     if hole % 2 == 0:
         for delta in (-2, 2):
             nbr = hole + delta
+
             if 0 <= nbr < L:
                 if nbr not in up_sites:
                     new_state = (nbr, up_sites)
                 else:
-                    new_up = tuple(sorted([s if s != nbr else hole for s in up_sites]))
+                    new_up = tuple(
+                        sorted(
+                            hole if site == nbr else site
+                            for site in up_sites
+                        )
+                    )
                     new_state = (nbr, new_up)
-                s_p_onehot = torch.tensor(state_to_onehot(new_state, L), dtype=torch.float32, device=device).unsqueeze(0)
-                psi_sp = psi(s_p_onehot)
-                coeff = -t2 * (-1)  # consistent with build_Hamiltonian / adjlist
-                E_loc = E_loc + coeff * (psi_sp / psi_s)
 
-    # NN spin exchange (diagonal + possible off-diagonal flips)
+                connected_states.append(new_state)
+
+                # Same sign convention as the original function.
+                coefficients.append(-t2 * (-1))
+
+    # ---------------------------------------------------------------
+    # NN spin exchange
+    # ---------------------------------------------------------------
     if J1 != 0.0:
         for site in range(L - 1):
-            if site == hole or (site + 1) == hole:
+            if site == hole or site + 1 == hole:
                 continue
-            spin_i = 1 if site in up_sites else -1
-            spin_j = 1 if (site + 1) in up_sites else -1
-            diag_coeff = (J1 / 4.0) * spin_i * spin_j
-            E_loc = E_loc + diag_coeff  # diagonal term (ratio = 1)
-            if spin_i != spin_j:
-                # construct flipped configuration
-                if spin_i == 1:
-                    flipped_up = tuple(sorted([s if s != site else site + 1 for s in up_sites]))
-                else:
-                    flipped_up = tuple(sorted([s if s != (site + 1) else site for s in up_sites]))
-                flipped_state = (hole, flipped_up)
-                s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
-                psi_sp = psi(s_p_onehot)
-                E_loc = E_loc + (J1 / 2.0) * (psi_sp / psi_s)
 
-    # NNN spin exchange (even sites only)
+            spin_i = 1 if site in up_sites else -1
+            spin_j = 1 if site + 1 in up_sites else -1
+
+            # Diagonal contribution has psi(s') / psi(s) = 1.
+            diagonal_energy += (J1 / 4.0) * spin_i * spin_j
+
+            if spin_i != spin_j:
+                if spin_i == 1:
+                    flipped_up = tuple(
+                        sorted(
+                            site + 1 if s == site else s
+                            for s in up_sites
+                        )
+                    )
+                else:
+                    flipped_up = tuple(
+                        sorted(
+                            site if s == site + 1 else s
+                            for s in up_sites
+                        )
+                    )
+
+                connected_states.append((hole, flipped_up))
+                coefficients.append(J1 / 2.0)
+
+    # ---------------------------------------------------------------
+    # NNN spin exchange
+    # ---------------------------------------------------------------
     if J2 != 0.0:
         for site in range(0, L - 2, 2):
-            if site == hole or (site + 2) == hole:
+            if site == hole or site + 2 == hole:
                 continue
+
             spin_i = 1 if site in up_sites else -1
-            spin_j = 1 if (site + 2) in up_sites else -1
-            diag_coeff = (J2 / 4.0) * spin_i * spin_j
-            E_loc = E_loc + diag_coeff
+            spin_j = 1 if site + 2 in up_sites else -1
+
+            # Diagonal contribution has psi(s') / psi(s) = 1.
+            diagonal_energy += (J2 / 4.0) * spin_i * spin_j
+
             if spin_i != spin_j:
                 if spin_i == 1:
-                    flipped_up = tuple(sorted([s if s != site else site + 2 for s in up_sites]))
+                    flipped_up = tuple(
+                        sorted(
+                            site + 2 if s == site else s
+                            for s in up_sites
+                        )
+                    )
                 else:
-                    flipped_up = tuple(sorted([s if s != (site + 2) else site for s in up_sites]))
-                flipped_state = (hole, flipped_up)
-                s_p_onehot = torch.tensor(state_to_onehot(flipped_state, L), dtype=torch.float32, device=device).unsqueeze(0)
-                psi_sp = psi(s_p_onehot)
-                E_loc = E_loc + (J2 / 2.0) * (psi_sp / psi_s)
+                    flipped_up = tuple(
+                        sorted(
+                            site if s == site + 2 else s
+                            for s in up_sites
+                        )
+                    )
+
+                connected_states.append((hole, flipped_up))
+                coefficients.append(J2 / 2.0)
+
+    # ---------------------------------------------------------------
+    # Evaluate the current and all connected states in one batch.
+    # ---------------------------------------------------------------
+    all_states = [state] + connected_states
+
+    onehot_batch = states_to_onehot(
+        all_states,
+        L,
+        device=model_device,
+        dtype=model_dtype,
+    )
+
+    # Shape: (1 + number_of_connected_states,)
+    psi_values = psi(onehot_batch).reshape(-1)
+
+    psi_s = psi_values[0]
+
+    # Avoid a Python `if` on a CUDA tensor, which would synchronize the GPU.
+    safe_psi_s = torch.where(
+        psi_s.abs() < 1e-12,
+        torch.full_like(psi_s, 1e-12),
+        psi_s,
+    )
+
+    E_loc = torch.as_tensor(
+        diagonal_energy,
+        device=model_device,
+        dtype=psi_s.dtype,
+    )
+
+    if connected_states:
+        coeff_tensor = torch.as_tensor(
+            coefficients,
+            device=model_device,
+            dtype=psi_s.dtype,
+        )
+
+        psi_connected = psi_values[1:]
+
+        E_loc = E_loc + torch.sum(
+            coeff_tensor * psi_connected / safe_psi_s
+        )
 
     return E_loc
 
@@ -685,7 +940,8 @@ def BalancedSampler(state, L):
             up_sites = tuple(sorted(up_sites))
         return (new_hole, up_sites)
     else: # swap two nearest neighbor spins
-        spins = np.zeros(L, dtype=int)
+        # spins = np.zeros(L, dtype=int)
+        spins = [0] * L
         for site in range(L):
             if site == hole:
                 spins[site] = 0  # hole
@@ -710,9 +966,6 @@ def BalancedSampler(state, L):
             up_sites[idx_up] = site1
             up_sites = tuple(sorted(up_sites))
         return (hole, up_sites)
-        
-
-
 
 class NNConvStrides(nn.Module):
     def __init__(self, L, nhole=2, in_channels=4, hidden_dim=32, strides=(1,2,3,4),kernel_size=3):
@@ -804,7 +1057,8 @@ class VBSNN(nn.Module):
         dtype = x.dtype
 
         # obtain holes per sample encoded as channel 0 == 1
-        hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        #hole_mask = (x[:, :, 0] == 1).float()  # (B, L)
+        hole_mask = (x[:, :, 0] == 1).to(dtype=x.dtype)
         hole_pos = torch.argmax(hole_mask, dim=1)  # (B,) — fixed shape, vmap-safe 
 
         # Build indices [0,1,...,hole-1, hole+1,...,L-1] per sample
@@ -831,7 +1085,13 @@ class VBSNN(nn.Module):
 
 def compute_log_psi_jacobian_vmap(psi, samples_onehot, device):
     """Vectorized Jacobian via torch.func (PyTorch >= 2.0)."""
-    x = torch.from_numpy(samples_onehot).float().to(device)
+    #x = torch.from_numpy(samples_onehot).float().to(device)
+    model_device, model_dtype = model_device_dtype(psi)
+    x = torch.as_tensor(
+        samples_onehot,
+        device=model_device,
+        dtype=model_dtype,
+    )
 
     params_dict = {k: v for k, v in psi.named_parameters() if v.requires_grad}
     param_names = list(params_dict.keys())
@@ -850,35 +1110,52 @@ def compute_log_psi_jacobian_vmap(psi, samples_onehot, device):
         rows.append(jac_dict[name].reshape(x.shape[0], -1))
     return torch.cat(rows, dim=1)  # (Ns, Np)
 
-def sr_gradient(J, E_loc, tau=1e-3):
-    """Stochastic reconfiguration: solve (J^T J + tau*I) delta_theta = J^T E_loc.
+# def sr_gradient(J, E_loc, tau=1e-3):
+#     """Stochastic reconfiguration: solve (J^T J + tau*I) delta_theta = J^T E_loc.
 
-    Args:
-        J: Jacobian of log|psi|, shape (Ns, Np).
-        E_loc: local energies, shape (Ns,).
-        tau: diagonal regularization shift.
+#     Args:
+#         J: Jacobian of log|psi|, shape (Ns, Np).
+#         E_loc: local energies, shape (Ns,).
+#         tau: diagonal regularization shift.
 
-    Returns:
-        delta_theta: natural gradient update, shape (Np,).
-    """
-    # J64 = J.detach().double()
-    # E64 = E_loc.detach().double()
-    # Ns = J64.shape[0]
-    # S = J64.T @ J64 # /Ns
-    # S.diagonal().add_(tau)
-    # f = J64.T @ E64 # /Ns
-    # delta_theta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
-    # #delta_theta = torch.linalg.lstsq(S, f.unsqueeze(-1)).solution.squeeze(-1)
-    # return delta_theta.float()
+#     Returns:
+#         delta_theta: natural gradient update, shape (Np,).
+#     """
+#     # J64 = J.detach().double()
+#     # E64 = E_loc.detach().double()
+#     # Ns = J64.shape[0]
+#     # S = J64.T @ J64 # /Ns
+#     # S.diagonal().add_(tau)
+#     # f = J64.T @ E64 # /Ns
+#     # delta_theta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
+#     # #delta_theta = torch.linalg.lstsq(S, f.unsqueeze(-1)).solution.squeeze(-1)
+#     # return delta_theta.float()
 
-    # Use double precision on CPU for numerical stability
-    J64 = J.detach().cpu().double()
-    E64 = E_loc.detach().cpu().double()
-    S = J64.T @ J64
+#     # Use double precision on CPU for numerical stability
+#     J64 = J.detach().cpu().double()
+#     E64 = E_loc.detach().cpu().double()
+#     S = J64.T @ J64
+#     S.diagonal().add_(tau)
+#     f = J64.T @ E64
+#     delta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
+#     return delta.float().to(J.device)
+
+def sr_gradient(J, E_loc, tau=1e-3, solve_dtype=torch.float64):
+    if solve_dtype is None:
+        solve_dtype = J.dtype
+
+    J_work = J.detach().to(dtype=solve_dtype)
+    E_work = E_loc.detach().to(
+        device=J.device,
+        dtype=solve_dtype,
+    )
+
+    S = J_work.T @ J_work
     S.diagonal().add_(tau)
-    f = J64.T @ E64
+    f = J_work.T @ E_work
+
     delta = torch.linalg.solve(S, f.unsqueeze(-1)).squeeze(-1)
-    return delta.float().to(J.device)
+    return delta.to(dtype=J.dtype)
 
 
 def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
@@ -893,9 +1170,18 @@ def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
         tau: diagonal regularization shift.
         device: torch device.
     """
-    s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
-    # Compute Jacobian of log|psi| over sampled states
-    J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    # s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
+    # # Compute Jacobian of log|psi| over sampled states
+    # J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    model_device, model_dtype = model_device_dtype(psi)
+    samples = states_to_onehot(
+        sampled_states,
+        L,
+        device=model_device,
+        dtype=model_dtype,
+    )
+    J = compute_log_psi_jacobian_vmap(psi, samples, model_device)
+
     E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
     #J_centered = J - J.mean(dim=0, keepdim=True)
     delta_theta = sr_gradient(J, E_loc, tau=tau)
@@ -906,7 +1192,11 @@ def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
         for p in psi.parameters():
             if p.requires_grad:
                 numel = p.numel()
-                p.data -= lr * delta_theta[offset:offset + numel].reshape(p.shape)
+                #p.data -= lr * delta_theta[offset:offset + numel].reshape(p.shape)
+                update = delta_theta[offset:offset + numel].reshape_as(p)
+                update = update.to(device=p.device, dtype=p.dtype)
+                p.sub_(lr * update)
+
                 offset += numel
                 # update max update tracking
                 param_update = (lr * delta_theta[offset - numel:offset].reshape(p.shape)).abs().max().item()
@@ -924,10 +1214,11 @@ def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burni
     n_walkers: number of parallel walkers
     Returns flattened lists of psis and elocs and the list of final walker states.
     """
+    device, dtype = model_device_dtype(psi)
     # initialize walkers
     n_walkers = len(initial_states)
     states = initial_states.copy()
-    Psis = []
+    #Psis = []
     Elocs = []
     Sampled_states = []
     accept_count = 0
@@ -937,14 +1228,26 @@ def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burni
         proposed = [Sampler(s, L) for s in states]
 
         # build batched one-hot inputs efficiently via numpy.stack -> torch.from_numpy
-        s_np = np.stack([state_to_onehot(s, L) for s in states])
-        new_np = np.stack([state_to_onehot(s, L) for s in proposed])
-        s_batch = torch.from_numpy(s_np).float().to(device)
-        new_batch = torch.from_numpy(new_np).float().to(device)
+        # s_np = np.stack([state_to_onehot(s, L) for s in states])
+        # new_np = np.stack([state_to_onehot(s, L) for s in proposed])
+        # s_batch = torch.from_numpy(s_np).float().to(device)
+        # new_batch = torch.from_numpy(new_np).float().to(device)
+        # # evaluate psi for all current and proposed states in one forward pass
+        # psi_vals = psi(s_batch).squeeze()
+        # psi_new_vals = psi(new_batch).squeeze()
+        
+        s_batch = states_to_onehot(
+            states, L, device=device, dtype=dtype
+        )
+        new_batch = states_to_onehot(
+            proposed, L, device=device, dtype=dtype
+        )
+        both = torch.cat((s_batch, new_batch), dim=0)
+        with torch.no_grad():
+            both_values = psi(both).reshape(-1)
 
-        # evaluate psi for all current and proposed states in one forward pass
-        psi_vals = psi(s_batch).squeeze()
-        psi_new_vals = psi(new_batch).squeeze()
+        psi_vals = both_values[:n_walkers]
+        psi_new_vals = both_values[n_walkers:]
 
         # compute acceptance probabilities (vectorized)
         denom = psi_vals.abs()**2
@@ -952,47 +1255,76 @@ def Obtain_Sampling_batch(psi, L, initial_states, n_steps, pretrain=False, burni
         accept_prob = torch.clamp(ratio, max=1.0)
 
         rand = torch.rand(n_walkers, device=device)
-        accept = (rand < accept_prob).cpu().numpy()
+        #accept = (rand < accept_prob).cpu().numpy()
+        accept = (rand < accept_prob).tolist()
 
         # update walkers and collect psi values
+        # for i in range(n_walkers):
+        #     if accept[i]:
+        #         states[i] = proposed[i]
+        #         Psis.append(psi_new_vals[i])
+        #         accept_count += 1
+        #     else:
+        #         Psis.append(psi_vals[i])
+        #     Sampled_states.append(tuple(states[i]))
         for i in range(n_walkers):
             if accept[i]:
                 states[i] = proposed[i]
-                Psis.append(psi_new_vals[i])
                 accept_count += 1
-            else:
-                Psis.append(psi_vals[i])
-            Sampled_states.append(tuple(states[i]))
 
         if burnin:
             continue
+        
+        # Tuples are immutable, so extending with the current states is safe.
+        Sampled_states.extend(states)
 
         # compute local energies per walker (still per-walker calls)
-        for s in states:
-            if not pretrain:
-                E_loc = local_energy_on_the_fly(s, psi, L, t1, t2, J1=J1, J2=J2, device=device)
-                Elocs.append(E_loc)
-            else:
-                Elocs.append(torch.tensor(find_state_coeff(L, s, tb_coeff), device=device))
+        # for s in states:
+        #     if not pretrain:
+        #         E_loc = local_energy_on_the_fly(s, psi, L, t1, t2, J1=J1, J2=J2)
+        #         Elocs.append(E_loc)
+        #     else:
+        #         Elocs.append(torch.tensor(find_state_coeff(L, s, tb_coeff), device=device))
+        with torch.no_grad():
+            for s in states:
+                if not pretrain:
+                    E_loc = local_energy_on_the_fly(s, psi, L, t1, t2, J1=J1, J2=J2)
+                    Elocs.append(E_loc)
+                else:
+                    Elocs.append(torch.as_tensor(
+                            find_state_coeff(L, s, tb_coeff),
+                            device=device, dtype=dtype,
+                        )
+                    )
 
     if print_rate:
         print(f"Acceptance rate (batched): {accept_count / (n_steps * n_walkers):.4f}")
 
     # flatten Psis/Elocs are lists of tensors -> stack
-    if len(Psis) > 0:
-        Psis_t = torch.stack(Psis).squeeze()
+    # if len(Psis) > 0:
+    #     Psis_t = torch.stack(Psis).squeeze()
+    # else:
+    #     Psis_t = torch.tensor([], device=device)
+    # if len(Elocs) > 0:
+    #     Elocs_t = torch.stack(Elocs).squeeze()
+    # else:
+    #     Elocs_t = torch.tensor([], device=device)
+    if Sampled_states:
+        sampled_batch = states_to_onehot(Sampled_states, L,
+            device=device, dtype=dtype,
+        )
+        # This forward pass must have gradients enabled because Psis_t is
+        # subsequently used to construct the training loss.
+        Psis_t = psi(sampled_batch).reshape(-1)
     else:
-        Psis_t = torch.tensor([], device=device)
-    if len(Elocs) > 0:
-        Elocs_t = torch.stack(Elocs).squeeze()
+        Psis_t = torch.empty(0, device=device, dtype=dtype)
+    if Elocs:
+        Elocs_t = torch.stack(Elocs).reshape(-1)
     else:
-        Elocs_t = torch.tensor([], device=device)
+        Elocs_t = torch.empty(0,device=device, dtype=dtype)
 
     # return psis, elocs, and final states (return first state for compatibility)
     return Psis_t, Elocs_t, states, Sampled_states
-
-
-
 
 def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device,
                         adaptive_lr=False, lr=1e-3):
@@ -1007,10 +1339,41 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
         tau: diagonal regularization shift.
         device: torch device.
     """
-    s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
-    
-    # Compute Jacobian of log|psi| over sampled states
-    J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    # s_np = np.stack([state_to_onehot(s, L) for s in sampled_states])
+    # # Compute Jacobian of log|psi| over sampled states
+    # J = compute_log_psi_jacobian_vmap(psi, s_np, device)       # (Ns, Np)
+    model_device, model_dtype = model_device_dtype(psi)
+    # s_np = states_to_onehot(
+    #     sampled_states,
+    #     L,
+    #     device=model_device,
+    #     dtype=model_dtype,
+    # )
+
+    if torch.is_tensor(sampled_states):
+        # Output from Obtain_Sampling_batch_gpu:
+        # int8 spin representation with shape (Ns, L).
+        if sampled_states.ndim == 2:
+            s_np = spin_tensor_to_onehot(sampled_states.to(device=model_device), 
+            dtype=model_dtype,
+            )
+        # Also allow already-one-hot input with shape (Ns, L, 4).
+        elif sampled_states.ndim == 3:
+            s_np = sampled_states.to(device=model_device, dtype=model_dtype,)
+        else:
+            raise ValueError(
+                "Tensor sampled_states must have shape (Ns, L) "
+                "or (Ns, L, 4), but received "
+                f"{tuple(sampled_states.shape)}"
+            )
+    else:
+        # Backward compatibility with the original tuple representation.
+        s_np = states_to_onehot(sampled_states, L,
+            device=model_device, dtype=model_dtype,
+        )
+
+    J = compute_log_psi_jacobian_vmap(psi, s_np, model_device)
+
     E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
     
     # delta_theta is our "Natural Gradient" (S^-1 g)
@@ -1027,7 +1390,13 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
             numel = p.numel()
             # Reshape the 1D chunk of delta_theta back to the parameter's shape.
             # .clone() ensures we don't have overlapping memory issues from the 1D tensor.
-            p.grad = delta_theta[offset:offset + numel].reshape(p.shape).clone()
+            #p.grad = delta_theta[offset:offset + numel].reshape(p.shape).clone()
+            p.grad = (
+                delta_theta[offset:offset + numel]
+                .reshape_as(p)
+                .to(device=p.device, dtype=p.dtype)
+                .clone()
+            )
             offset += numel
     
     if adaptive_lr:
@@ -1043,27 +1412,36 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
     #     print(f"Current learning rate: {param_group['lr']:.4e}")
 
 
-def cleanup_memory(free_vars: Optional[list] = None, optimizer: Optional[torch.optim.Optimizer] = None):
-    if free_vars:
-        for v in free_vars:
-            try:
-                # prefer clearing containers in-place
-                if hasattr(v, "clear"):
-                    v.clear()
-                else:
-                    del v
-            except Exception:
-                pass
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
-    # no MPS branch needed per your setup
+# def cleanup_memory(free_vars: Optional[list] = None, optimizer: Optional[torch.optim.Optimizer] = None):
+#     if free_vars:
+#         for v in free_vars:
+#             try:
+#                 # prefer clearing containers in-place
+#                 if hasattr(v, "clear"):
+#                     v.clear()
+#                 else:
+#                     del v
+#             except Exception:
+#                 pass
+#     gc.collect()
+#     if torch.cuda.is_available():
+#         torch.cuda.synchronize()
+#         torch.cuda.empty_cache()
+#     # no MPS branch needed per your setup
 
-    # optional: remove optimizer GPU buffers (use if optimizer state grows)
-    if optimizer is not None:
-        for k in list(optimizer.state.keys()):
-            state = optimizer.state[k]
-            for sk in list(state.keys()):
-                if torch.is_tensor(state[sk]):
-                    state.pop(sk, None)
+#     # optional: remove optimizer GPU buffers (use if optimizer state grows)
+#     if optimizer is not None:
+#         for k in list(optimizer.state.keys()):
+#             state = optimizer.state[k]
+#             for sk in list(state.keys()):
+#                 if torch.is_tensor(state[sk]):
+#                     state.pop(sk, None)
+
+def cleanup_memory(free_vars=None, optimizer=None):
+    if free_vars:
+        for value in free_vars:
+            if hasattr(value, "clear"):
+                value.clear()
+
+    # Use only occasionally, not every training iteration.
+    gc.collect()
