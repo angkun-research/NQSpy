@@ -160,6 +160,44 @@ Main reusable classes include:
 Reference:
 - NeuralNetworks.py
 
+### GPU-accelerated VMC sampling (vmc_utils_gpu.py)
+
+The repository also provides fully batched VMC sampling through `vmc_utils_gpu.py`. The GPU samplers operate on all walkers simultaneously using PyTorch tensors, avoiding Python-level walker loops during the Metropolis sampling procedure.
+
+Main entry points:
+
+- `Obtain_Sampling_batch_gpu`: Batched, device-resident VMC sampling.
+- `BalancedSampler_gpu`: Local balanced sampler for nearest-neighbor moves.
+- `GlobalSampler_gpu`: Global sampler supporting hole and spin exchanges.
+
+The neural-network model determines the sampling device. Place the model on CUDA to run the sampler on a GPU, or on CPU for a CPU fallback. The initial Python states are converted to device tensors automatically, and the returned walker states remain on the model's device.
+
+Example:
+
+```python
+from utils import pick_best_device
+from vmc_utils_gpu import (
+    BalancedSampler_gpu,
+    GlobalSampler_gpu,
+    Obtain_Sampling_batch_gpu,
+)
+
+device = pick_best_device()
+psi = psi.to(device)
+
+psis, energies, states, sampled_states = Obtain_Sampling_batch_gpu(
+    psi,
+    L,
+    initial_states,
+    n_steps,
+    device=device,
+    Sampler=GlobalSampler_gpu,
+)
+```
+
+A complete GPU VMC workflow, including burn-in, batched walker updates, energy evaluation, and optimization, is available in [examples/collect_vmc_gpu.py](examples/collect_vmc_gpu.py).
+
+
 ## Script Workflows
 
 Common VMC workflow (as implemented across vmc scripts):

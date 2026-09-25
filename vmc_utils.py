@@ -127,7 +127,7 @@ def build_Hamiltonian(L, t1, t2, basis,J1=0.0, J2=0.0,device=None, dtype=torch.f
         return H
     return torch.as_tensor(H, device=device, dtype=dtype)
 
-def build_Hamiltonian_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0):
+def build_Hamiltonian_adjlist(L, t1, t2, basis, J1=0.0, J2=0.0, device='cpu', dtype=torch.float64):
     """
     Build Hamiltonian as adjacency lists: for each basis index i return arrays
     of connected indices and matrix elements H[i, j].
@@ -223,9 +223,13 @@ def adjlist_to_csr(neighbors_idx, neighbors_val):
     cols = []
     data = []
     for i, (cols_i, vals_i) in enumerate(zip(neighbors_idx, neighbors_val)):
-        if cols_i.size == 0:
+        # if cols_i.size == 0:
+        #     continue
+        # rows.extend([i] * int(cols_i.size))
+        n = cols_i.numel() if torch.is_tensor(cols_i) else cols_i.size
+        if n == 0:
             continue
-        rows.extend([i] * int(cols_i.size))
+        rows.extend([i] * int(n))
         cols.extend(cols_i.tolist())
         data.extend(vals_i.tolist())
 
