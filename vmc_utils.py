@@ -1189,7 +1189,7 @@ def sr_update(psi, sampled_states, E_tensor, L, lr, tau, device):
     E_loc = E_tensor.detach() - E_tensor.mean().detach()        # center local energies
     #J_centered = J - J.mean(dim=0, keepdim=True)
     delta_theta = sr_gradient(J, E_loc, tau=tau)
-    print(f"learning rate: {lr}, tau: {tau}, max update: {delta_theta.abs().max():.4e}")
+    #print(f"learning rate: {lr}, tau: {tau}, max update: {delta_theta.abs().max():.4e}")
     max_update = 0.0 
     with torch.no_grad():
         offset = 0
@@ -1382,7 +1382,7 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
     
     # delta_theta is our "Natural Gradient" (S^-1 g)
     delta_theta = sr_gradient(J, E_loc, tau=tau)
-    print(f"tau: {tau}, max SR gradient: {delta_theta.abs().max():.4e}")
+    #print(f"tau: {tau}, max SR gradient: {delta_theta.abs().max():.4e}")
     
     # 1. Clear any residual gradients in PyTorch's workspace
     optimizer.zero_grad()
@@ -1406,7 +1406,7 @@ def sr_update_optimizer(psi, sampled_states, E_tensor, L, optimizer, tau, device
     if adaptive_lr:
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr / (delta_theta.abs().max().item() + 1e-5)
-            print(f"Adaptive learning rate set to: {param_group['lr']:.4e}")
+            #print(f"Adaptive learning rate set to: {param_group['lr']:.4e}")
 
     # 3. Adam reads our injected .grad, updates its internal momentum (mt, vt), 
     # and safely steps the parameters.

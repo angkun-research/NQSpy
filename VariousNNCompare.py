@@ -19,8 +19,8 @@ rescale = 1.0 #1/torch.max(y)
 print("rescale factor:", rescale)
 
 in_channels=4
-hidden_dim = 64 #64 #32 #32
-kernel_size = 2 #3 #16
+hidden_dim = 64 #64 #32 #32 # 1024 for FCnet
+kernel_size = 3 #2 #3 #16 # 3 for convnet
 stride = 2
 activation = 'tanh'
 holewave = True #False 
