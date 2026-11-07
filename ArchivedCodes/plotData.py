@@ -265,12 +265,12 @@ if __name__ == "__main__":
 	# top: Bond dimension (linear)
     ax_top.plot(J2s, Chis, marker='o', color='black', linestyle='--',
                 label=r'DMRG cutoff $10^{-12}$')
+    ax_top.axhline(y=3, color='red', linestyle='--',label=r'$\chi=3$')
     ax_top.set_ylabel(r'Bond $\chi$')
     ax_top.legend(loc='center left')
     ax_top.set_yscale('log')
     ax_top.set_ylim(1, 200)
     ax_top.set_xlim(-0.02, 2.02)
-    ax_top.axhline(y=3, color='red', linestyle='--')
     ax_top.grid(False)
 
 	# middle: 1 - Fidelity (log scale)
